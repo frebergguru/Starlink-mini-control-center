@@ -156,6 +156,11 @@ button {
   border-color: var(--accent, #56ccf2);
 }
 
+.align-help {
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
 .conn .btn {
   padding: 4px 8px;
   font-size: 12px;

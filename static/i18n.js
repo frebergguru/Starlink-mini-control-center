@@ -117,6 +117,7 @@
     "align.current_boresight": "Current boresight",
     "align.desired_target": "Desired target",
     "align.converged": "CONVERGED",
+    "align.help": "The alignment filter shows CONVERGED once the dish has a confident fix on its pointing direction. Other states (such as INITIALIZING or RESETTING) mean the estimate is still stabilising after boot, movement, or GPS loss — readings may be noisy until it converges.",
 
     "obs.aria": "Obstruction map",
     "obs.clear": "clear",
@@ -423,6 +424,7 @@
     "align.current_boresight": "Nåværende siktelinje",
     "align.desired_target": "Ønsket mål",
     "align.converged": "KONVERGERT",
+    "align.help": "Innrettingsfilteret viser KONVERGERT når antennen har en sikker beregning av peileretningen. Andre tilstander (som INITIALIZING eller RESETTING) betyr at estimatet fortsatt stabiliserer seg etter oppstart, bevegelse eller GPS-tap — avlesningene kan være upålitelige inntil det konvergerer.",
 
     "obs.aria": "Hindringskart",
     "obs.clear": "fri",
