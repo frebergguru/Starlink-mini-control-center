@@ -9,6 +9,9 @@
   const HISTORY_REFRESH_TICKS = 10;
   const THROUGHPUT_MAX_BPS = 300_000_000;
 
+  let utcOffsetS = 0;
+  let lastDiagnostics = null;
+
   // ───── Utilities ─────
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -288,11 +291,22 @@
     pill.textContent = disablement;
     pill.dataset.state = disablement === "OKAY" ? "OKAY" : "warn";
 
+    // Track UTC offset so the Power Save timeline renders in local time
+    const devInfo = pick(s, "device_info", "deviceInfo") || {};
+    const reportedOffset = Number(pick(devInfo, "utc_offset_s", "utcOffsetS"));
+    if (isFinite(reportedOffset)) utcOffsetS = reportedOffset;
+
     // Status KV
     const mobility = pick(s, "mobility_class") || "—";
     const classOfService = pick(s, "class_of_service", "classOfService");
     const updateState = pick(s, "software_update_state", "softwareUpdateState");
     const eth = pick(s, "eth_speed_mbps", "ethSpeedMbps");
+    const selfTest = lastDiagnostics ? pick(lastDiagnostics, "hardware_self_test", "hardwareSelfTest") : null;
+    const selfTestText =
+      selfTest === "PASSED" ? i18n.t("selftest.passed")
+      : selfTest === "FAILED" ? i18n.t("selftest.failed")
+      : selfTest || null;
+    const selfTestCls = selfTest === "PASSED" ? "good" : selfTest === "FAILED" ? "bad" : null;
     renderKV($("#kv-status"), [
       [i18n.t("kv.disablement"), disablement, disablement === "OKAY" ? "good" : "warn"],
       [i18n.t("kv.mobility_class"), mobility],
@@ -300,10 +314,23 @@
       [i18n.t("kv.class_of_service"), classOfService],
       [i18n.t("kv.software_update"), updateState],
       [i18n.t("kv.ethernet_speed"), eth ? i18n.t("units.eth_speed", { n: eth }) : null],
+      [i18n.t("kv.self_test"), selfTestText, selfTestCls],
     ]);
 
     // Alerts
     const alerts = pick(s, "alerts") || {};
+
+    // Live snow-melt heating indicator
+    const isHeating = Boolean(alerts.is_heating || alerts.dish_is_heating);
+    const snowChips = $("#cfg-snow-chips");
+    if (snowChips) {
+      snowChips.replaceChildren();
+      if (isHeating) {
+        snowChips.appendChild(
+          el("span", { class: "chip chip-heating", "data-on": "true", text: i18n.t("snow.heating_now") })
+        );
+      }
+    }
     const active = Object.entries(alerts)
       .filter(([, v]) => v)
       .map(([k]) => k);
@@ -1367,12 +1394,16 @@
   };
 
   const refreshHeavyTelemetry = async () => {
-    const [locR, obsR] = await Promise.all([
+    const [locR, obsR, diagR] = await Promise.all([
       api.get("/api/location"),
       api.get("/api/obstruction"),
+      api.get("/api/diagnostics"),
     ]);
     if (locR.ok && locR.body.data) renderLocation(locR.body.data);
     if (obsR.ok && obsR.body.data) renderObstructionMap(obsR.body.data);
+    if (diagR.ok && diagR.body.data) {
+      lastDiagnostics = unwrap(diagR.body.data, "dish_get_diagnostics", "dishGetDiagnostics");
+    }
   };
 
   const refreshTelemetry = async () => {
@@ -1437,12 +1468,19 @@
     REMOTE: { key: "remote" },
   };
 
-  const fmtTimeOfDay = (minutes) => {
+  const fmtHHMM = (minutes) => {
     const n = Number(minutes);
     if (!isFinite(n)) return "—";
-    const h = Math.floor(n / 60) % 24;
-    const m = Math.floor(n) % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} UTC`;
+    const mod = ((n % 1440) + 1440) % 1440;
+    const h = Math.floor(mod / 60) % 24;
+    const m = Math.floor(mod) % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  const fmtTimeOfDay = (utcMinutes) => {
+    const n = Number(utcMinutes);
+    if (!isFinite(n)) return "—";
+    return fmtHHMM(n + Math.round(utcOffsetS / 60));
   };
 
   const fmtDurationMin = (m) => {
@@ -1461,10 +1499,12 @@
     const winB = $("#cfg-ps-window-wrap");
     const nowLine = $("#cfg-ps-now");
 
+    const offMin = Math.round(utcOffsetS / 60);
     const now = new Date();
-    const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-    nowLine.style.left = `${(nowMin / 1440) * 100}%`;
-    nowLine.title = i18n.t("config.ps.now_title", { time: fmtTimeOfDay(nowMin) });
+    const nowUtcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const nowLocalMin = ((nowUtcMin + offMin) % 1440 + 1440) % 1440;
+    nowLine.style.left = `${(nowLocalMin / 1440) * 100}%`;
+    nowLine.title = i18n.t("config.ps.now_title", { time: fmtHHMM(nowLocalMin) });
 
     const s = Number(startMin);
     const d = Number(durMin);
@@ -1473,13 +1513,14 @@
     if (enabled) {
       pill.textContent = i18n.t("config.ps.active");
       pill.dataset.state = "OKAY";
-      const firstLen = Math.min(d, 1440 - s);
+      const sLocal = ((s + offMin) % 1440 + 1440) % 1440;
+      const firstLen = Math.min(d, 1440 - sLocal);
       winA.classList.remove("hidden");
-      winA.style.left = `${(s / 1440) * 100}%`;
+      winA.style.left = `${(sLocal / 1440) * 100}%`;
       winA.style.width = `${(firstLen / 1440) * 100}%`;
 
-      if (s + d > 1440) {
-        const wrapLen = s + d - 1440;
+      if (sLocal + d > 1440) {
+        const wrapLen = sLocal + d - 1440;
         winB.classList.remove("hidden");
         winB.style.left = "0%";
         winB.style.width = `${(wrapLen / 1440) * 100}%`;
@@ -1487,9 +1528,8 @@
         winB.classList.add("hidden");
       }
 
-      const endMin = (s + d) % 1440;
-      $("#cfg-ps-start").textContent = fmtTimeOfDay(s);
-      $("#cfg-ps-end").textContent = fmtTimeOfDay(endMin);
+      $("#cfg-ps-start").textContent = fmtHHMM(sLocal);
+      $("#cfg-ps-end").textContent = fmtHHMM(sLocal + d);
       $("#cfg-ps-duration").textContent = fmtDurationMin(d);
       $("#cfg-ps-state").textContent = i18n.t("config.ps.enabled_label");
     } else {
@@ -1763,7 +1803,7 @@
     const state = await refreshState();
     currentState = state;
     if (state && state.dish && state.dish.connected) {
-      refreshTelemetry();
+      await refreshTelemetry();
       loadConfig();
     }
     if (state && state.router && state.router.connected) {

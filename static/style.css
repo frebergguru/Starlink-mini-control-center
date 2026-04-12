@@ -491,6 +491,24 @@ main {
   font-size: 10px;
 }
 
+.chip.chip-heating {
+  background: rgba(255, 140, 66, 0.15);
+  border-color: rgba(255, 140, 66, 0.4);
+  color: #ffb066;
+  animation: chip-heating-pulse 2s ease-in-out infinite;
+}
+
+.chip.chip-heating::before {
+  content: "♨";
+  font-size: 12px;
+  animation: none;
+}
+
+@keyframes chip-heating-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 140, 66, 0.25); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 140, 66, 0); }
+}
+
 /* ───── Power save timeline ───── */
 
 .timeline {

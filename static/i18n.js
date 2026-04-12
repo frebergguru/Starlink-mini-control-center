@@ -81,6 +81,7 @@
     "kv.class_of_service": "Class of service",
     "kv.software_update": "Software update",
     "kv.ethernet_speed": "Ethernet speed",
+    "kv.self_test": "Self-test",
     "kv.snr_above_floor": "SNR above floor",
     "kv.gps_valid": "GPS valid",
     "kv.satellites": "Satellites",
@@ -157,6 +158,7 @@
     "snow.off.label": "Off",
     "snow.off.desc": "Snow melting is disabled. The dish will not heat itself.",
     "snow.off.pill": "OFF",
+    "snow.heating_now": "Heating now",
 
     "level.tilt.label": "Tilt like normal",
     "level.tilt.desc": "Dish follows the mounting bracket's natural tilt.",
@@ -249,6 +251,8 @@
 
     "selftest.pass": "pass",
     "selftest.fail": "fail",
+    "selftest.passed": "Passed",
+    "selftest.failed": "Failed",
 
     "iface.mac": "mac ",
     "iface.link": "link ",
@@ -390,6 +394,7 @@
     "kv.class_of_service": "Tjenesteklasse",
     "kv.software_update": "Programvareoppdatering",
     "kv.ethernet_speed": "Ethernet-hastighet",
+    "kv.self_test": "Selvtest",
     "kv.snr_above_floor": "SNR over grensen",
     "kv.gps_valid": "GPS gyldig",
     "kv.satellites": "Satellitter",
@@ -466,6 +471,7 @@
     "snow.off.label": "Av",
     "snow.off.desc": "Snøsmelting er deaktivert. Antennen varmer seg ikke selv.",
     "snow.off.pill": "AV",
+    "snow.heating_now": "Varmer nå",
 
     "level.tilt.label": "Vanlig helning",
     "level.tilt.desc": "Antennen følger brakettens naturlige helning.",
@@ -558,6 +564,8 @@
 
     "selftest.pass": "bestått",
     "selftest.fail": "feilet",
+    "selftest.passed": "Bestått",
+    "selftest.failed": "Mislyktes",
 
     "iface.mac": "mac ",
     "iface.link": "lenke ",
