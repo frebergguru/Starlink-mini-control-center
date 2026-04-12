@@ -138,7 +138,11 @@ class DishProxy:
                 request_serializer=lambda mm: mm.SerializeToString(),
                 response_deserializer=rsc.FromString,
             )(req, timeout=12)
-            return json_format.MessageToDict(resp, preserving_proto_field_name=True), ""
+            return json_format.MessageToDict(
+                resp,
+                preserving_proto_field_name=True,
+                always_print_fields_with_no_presence=True,
+            ), ""
         except grpc.RpcError as e:
             code = e.code().name if hasattr(e.code(), "name") else str(e.code())
             return None, f"{code}: {(e.details() or '').strip()}"
