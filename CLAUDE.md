@@ -32,6 +32,10 @@ Two entry points share one gRPC client. `starlink-web.py` serves a browser dashb
 
 **Frontend.** `static/{index.html,app.js,style.css,i18n.js}` — no build step, no framework. `i18n.js` holds en/nb translation tables keyed by `data-i18n` attributes, language choice persists in `localStorage`. `app.js` polls `/api/*` endpoints on a timer controlled by the Live Refresh checkbox.
 
+**Sparkline hover.** Interactive sparklines (power draw, throughput history) share one system: each render function (`renderSparkline` / `renderDualSparkline`) stores series data on `svg._hoverData = { length, floor, peak, anchorTime, series: [{label, samples, color, format}] }`. A single `initSparklineHover()` runs at DOMContentLoaded, walks every `.sparkline-wrap`, and attaches pointer handlers that draw a crosshair + per-series dots + tooltip from the stored metadata. To add another interactive sparkline, just render into an SVG inside a `.sparkline-wrap` and set `_hoverData`. Sample time is computed from `anchorTime - (length-1-idx)*1000 ms` — one sample per second, right edge = fetch time.
+
+**Accessibility.** The frontend targets WCAG 2.1 AA: skip link, full WAI-ARIA tab keyboard pattern (Arrow/Home/End, roving tabindex), `:focus-visible` rings on all interactive elements, labelled `<dialog>`s, a visually-hidden live region inside each `.conn` card that announces connection state changes, and a universal `prefers-reduced-motion: reduce` block. When adding new interactive markup keep this contract intact — buttons need accessible names, tablike widgets need keyboard support, and don't re-introduce `outline: none` without a replacement focus indicator.
+
 ## Things to know before editing
 
 - **Don't add compiled protobufs.** The reflection-based discovery is intentional — it makes the client firmware-agnostic. If you need a new endpoint, add the key to `PERMITTED_KEYS` (in `starlink-web.py`'s extension block, not the library) and a row to `DISH_KEY_MAP` / `ROUTER_KEY_MAP`.

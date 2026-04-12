@@ -8,47 +8,50 @@
   <link rel="icon" href="data:,">
 </head>
 <body>
+  <a href="#main-content" class="skip-link" data-i18n="a11y.skip_to_content">Skip to main content</a>
   <header class="app-header">
     <div class="brand">
-      <span class="brand-mark">✦</span>
+      <span class="brand-mark" aria-hidden="true">✦</span>
       <div>
         <h1 data-i18n="brand.title">Starlink Mini</h1>
         <p class="brand-sub" data-i18n="brand.sub">Dashboard</p>
       </div>
     </div>
     <div class="conn-group">
-      <div class="conn" data-i18n-attr="title:conn.dish" title="Starlink dish">
+      <div id="conn-dish" class="conn" data-i18n-attr="title:conn.dish" title="Starlink dish">
         <span id="conn-dot" class="conn-dot" data-state="unknown" aria-hidden="true"></span>
         <span class="conn-label-mini" data-i18n="conn.dish_label">Dish</span>
         <span id="conn-addr" class="conn-addr"></span>
-        <button id="btn-reconnect" type="button" class="btn btn-ghost">↻</button>
+        <span id="conn-sr" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
+        <button id="btn-reconnect" type="button" class="btn btn-ghost" aria-label="Reconnect dish" data-i18n-attr="aria-label:a11y.reconnect_dish;title:a11y.reconnect_dish"><span aria-hidden="true">↻</span></button>
       </div>
-      <div class="conn" data-i18n-attr="title:conn.router" title="Starlink router">
+      <div id="conn-router" class="conn" data-i18n-attr="title:conn.router" title="Starlink router">
         <span id="router-conn-dot" class="conn-dot" data-state="unknown" aria-hidden="true"></span>
         <span class="conn-label-mini" data-i18n="conn.router_label">Router</span>
         <span id="router-conn-addr" class="conn-addr"></span>
-        <button id="btn-router-reconnect" type="button" class="btn btn-ghost">↻</button>
+        <span id="router-conn-sr" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
+        <button id="btn-router-reconnect" type="button" class="btn btn-ghost" aria-label="Reconnect router" data-i18n-attr="aria-label:a11y.reconnect_router;title:a11y.reconnect_router"><span aria-hidden="true">↻</span></button>
       </div>
       <select id="lang-select" class="lang-select" data-i18n-attr="aria-label:lang.label" aria-label="Language">
-        <option value="en" data-i18n="lang.en">🇬🇧</option>
-        <option value="nb" data-i18n="lang.nb">🇳🇴</option>
+        <option value="en" data-i18n="lang.en_option">🇬🇧 English</option>
+        <option value="nb" data-i18n="lang.nb_option">🇳🇴 Norsk</option>
       </select>
       <button id="btn-lock-vault" type="button" class="btn btn-ghost btn-lock hidden" data-i18n-attr="title:vault.lock_title;aria-label:vault.lock_title" title="Lock vault" aria-label="Lock vault">🔒</button>
     </div>
   </header>
 
   <nav class="tabs" role="tablist" data-i18n-attr="aria-label:nav.sections" aria-label="Sections">
-    <button type="button" role="tab" class="tab" data-tab="telemetry" aria-selected="true" data-i18n="tabs.telemetry">Telemetry</button>
-    <button type="button" role="tab" class="tab" data-tab="history" aria-selected="false" data-i18n="tabs.history">History</button>
-    <button type="button" role="tab" class="tab" data-tab="router" aria-selected="false" data-i18n="tabs.router">Router</button>
-    <button type="button" role="tab" class="tab" data-tab="config" aria-selected="false" data-i18n="tabs.config">Configuration</button>
-    <button type="button" role="tab" class="tab" data-tab="actions" aria-selected="false" data-i18n="tabs.actions">Actions</button>
-    <button type="button" role="tab" class="tab" data-tab="advanced" aria-selected="false" data-i18n="tabs.advanced">Advanced</button>
+    <button type="button" role="tab" class="tab" id="tabbtn-telemetry" data-tab="telemetry" aria-selected="true" aria-controls="tab-telemetry" tabindex="0" data-i18n="tabs.telemetry">Telemetry</button>
+    <button type="button" role="tab" class="tab" id="tabbtn-history" data-tab="history" aria-selected="false" aria-controls="tab-history" tabindex="-1" data-i18n="tabs.history">History</button>
+    <button type="button" role="tab" class="tab" id="tabbtn-router" data-tab="router" aria-selected="false" aria-controls="tab-router" tabindex="-1" data-i18n="tabs.router">Router</button>
+    <button type="button" role="tab" class="tab" id="tabbtn-config" data-tab="config" aria-selected="false" aria-controls="tab-config" tabindex="-1" data-i18n="tabs.config">Configuration</button>
+    <button type="button" role="tab" class="tab" id="tabbtn-actions" data-tab="actions" aria-selected="false" aria-controls="tab-actions" tabindex="-1" data-i18n="tabs.actions">Actions</button>
+    <button type="button" role="tab" class="tab" id="tabbtn-advanced" data-tab="advanced" aria-selected="false" aria-controls="tab-advanced" tabindex="-1" data-i18n="tabs.advanced">Advanced</button>
   </nav>
 
-  <main>
+  <main id="main-content" tabindex="-1">
     <!-- ───── Telemetry ───── -->
-    <section id="tab-telemetry" class="tab-panel" role="tabpanel" aria-labelledby="telemetry">
+    <section id="tab-telemetry" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-telemetry" tabindex="0">
       <div class="toolbar">
         <label class="check">
           <input type="checkbox" id="auto-refresh" checked>
@@ -68,18 +71,18 @@
             <div class="tp-row">
               <div class="tp-label" data-i18n="tp.download">Download</div>
               <div class="tp-value" id="tp-dl">—</div>
-              <div class="bar"><span id="bar-dl" class="bar-fill bar-dl"></span></div>
+              <div class="bar" aria-hidden="true"><span id="bar-dl" class="bar-fill bar-dl"></span></div>
             </div>
             <div class="tp-row">
               <div class="tp-label" data-i18n="tp.upload">Upload</div>
               <div class="tp-value" id="tp-ul">—</div>
-              <div class="bar"><span id="bar-ul" class="bar-fill bar-ul"></span></div>
+              <div class="bar" aria-hidden="true"><span id="bar-ul" class="bar-fill bar-ul"></span></div>
             </div>
           </div>
           <dl class="kv kv-inline">
             <div><dt data-i18n="kv.latency">Latency</dt><dd id="m-lat">—</dd></div>
             <div><dt data-i18n="kv.drop_rate">Drop rate</dt><dd id="m-drop">—</dd></div>
-            <div><dt data-i18n="kv.snr">SNR</dt><dd id="m-snr">—</dd></div>
+            <div data-i18n-attr="title:kv.snr.tooltip" title="Signal-to-noise ratio of the Starlink link."><dt data-i18n="kv.snr">SNR</dt><dd id="m-snr">—</dd></div>
             <div><dt data-i18n="kv.uptime">Uptime</dt><dd id="m-uptime">—</dd></div>
           </dl>
         </article>
@@ -155,7 +158,7 @@
     </section>
 
     <!-- ───── Router ───── -->
-    <section id="tab-router" class="tab-panel hidden" role="tabpanel" aria-labelledby="router">
+    <section id="tab-router" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabbtn-router" tabindex="0">
       <div class="toolbar">
         <span id="router-last-update" class="muted"></span>
         <button id="btn-router-refresh" type="button" class="btn btn-ghost" data-i18n="toolbar.refresh_now">Refresh now</button>
@@ -208,7 +211,7 @@
     </section>
 
     <!-- ───── History ───── -->
-    <section id="tab-history" class="tab-panel hidden" role="tabpanel" aria-labelledby="history">
+    <section id="tab-history" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabbtn-history" tabindex="0">
       <div class="toolbar">
         <button id="btn-history-refresh" type="button" class="btn btn-ghost" data-i18n="toolbar.refresh_now">Refresh now</button>
         <span id="history-last-update" class="muted"></span>
@@ -237,6 +240,37 @@
           </dl>
         </article>
 
+        <article class="card card-hero card-wide">
+          <header class="card-head">
+            <h2 data-i18n="card.throughput_history">Throughput History</h2>
+            <span id="tp-hist-pill" class="pill" data-state="unknown">—</span>
+          </header>
+          <div class="tp-history">
+            <div class="tp-history-now">
+              <div class="tp-history-row">
+                <span class="lg lg-tp-dl" aria-hidden="true"></span>
+                <span class="tp-history-label" data-i18n="tp.download">Download</span>
+                <span class="tp-history-value" id="tp-hist-dl-now">—</span>
+              </div>
+              <div class="tp-history-row">
+                <span class="lg lg-tp-ul" aria-hidden="true"></span>
+                <span class="tp-history-label" data-i18n="tp.upload">Upload</span>
+                <span class="tp-history-value" id="tp-hist-ul-now">—</span>
+              </div>
+            </div>
+            <div class="sparkline-wrap">
+              <svg id="tp-hist-spark" class="sparkline" preserveAspectRatio="none" role="img" data-i18n-attr="aria-label:tp.hist_aria" aria-label="Throughput history"></svg>
+            </div>
+          </div>
+          <dl class="kv kv-inline">
+            <div><dt data-i18n="tp.dl_max">DL max</dt><dd id="tp-hist-dl-max">—</dd></div>
+            <div><dt data-i18n="tp.dl_avg">DL avg</dt><dd id="tp-hist-dl-avg">—</dd></div>
+            <div><dt data-i18n="tp.ul_max">UL max</dt><dd id="tp-hist-ul-max">—</dd></div>
+            <div><dt data-i18n="tp.ul_avg">UL avg</dt><dd id="tp-hist-ul-avg">—</dd></div>
+            <div><dt data-i18n="kv.window">Window</dt><dd id="tp-hist-window">—</dd></div>
+          </dl>
+        </article>
+
         <article class="card">
           <header class="card-head">
             <h2 data-i18n="card.outages">Outages</h2>
@@ -256,7 +290,7 @@
     </section>
 
     <!-- ───── Configuration ───── -->
-    <section id="tab-config" class="tab-panel hidden" role="tabpanel" aria-labelledby="config">
+    <section id="tab-config" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabbtn-config" tabindex="0">
       <div class="toolbar">
         <p class="muted small toolbar-note" data-i18n="config.readonly">Read-only — the LAN gRPC endpoint rejects writes with PERMISSION_DENIED. Change settings from the Starlink mobile app.</p>
         <button id="btn-reload-config" type="button" class="btn btn-ghost" data-i18n="toolbar.reload">Reload</button>
@@ -312,6 +346,7 @@
           <header class="card-head"><h2 data-i18n="card.software_updates">Software Updates</h2></header>
           <div class="feature-value" id="cfg-swu-hour">—</div>
           <p class="feature-desc" data-i18n="config.swu.reboot_window_desc">Reboot window for applying firmware updates</p>
+          <div class="chips" id="cfg-swu-state"></div>
           <div class="chips" id="cfg-swu-chips"></div>
           <div class="feature-accent" aria-hidden="true"></div>
         </article>
@@ -341,7 +376,7 @@
     </section>
 
     <!-- ───── Actions ───── -->
-    <section id="tab-actions" class="tab-panel hidden" role="tabpanel" aria-labelledby="actions">
+    <section id="tab-actions" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabbtn-actions" tabindex="0">
       <div class="grid">
         <article class="card">
           <header class="card-head"><h2 data-i18n="card.reboot_dish">Reboot Dish</h2></header>
@@ -365,7 +400,7 @@
     </section>
 
     <!-- ───── Advanced ───── -->
-    <section id="tab-advanced" class="tab-panel hidden" role="tabpanel" aria-labelledby="advanced">
+    <section id="tab-advanced" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabbtn-advanced" tabindex="0">
       <div class="grid">
         <article class="card card-wide">
           <header class="card-head">
@@ -414,7 +449,7 @@
   </main>
 
   <!-- Confirmation modal -->
-  <dialog id="confirm-modal" class="modal">
+  <dialog id="confirm-modal" class="modal" aria-labelledby="confirm-title" aria-describedby="confirm-msg">
     <form method="dialog" class="modal-body">
       <h3 id="confirm-title" data-i18n="modal.confirm_title">Confirm action</h3>
       <p id="confirm-msg" data-i18n="modal.confirm_msg">Are you sure?</p>
@@ -426,10 +461,11 @@
   </dialog>
 
   <!-- Master password vault gate -->
-  <dialog id="vault-modal" class="modal vault-modal">
+  <dialog id="vault-modal" class="modal vault-modal" aria-labelledby="vault-title" aria-describedby="vault-desc">
     <form id="vault-form" class="modal-body vault-modal-body">
       <h3 id="vault-title" data-i18n="vault.unlock_title">Enter master password</h3>
       <p id="vault-desc" class="muted small" data-i18n="vault.unlock_desc">Unlock the Wi-Fi password vault to continue.</p>
+      <input type="text" name="username" value="starlink-vault" autocomplete="username" aria-hidden="true" tabindex="-1" readonly class="visually-hidden">
       <label class="field vault-field">
         <span data-i18n="vault.password">Master password</span>
         <input id="vault-password" type="password" autocomplete="current-password" required>
@@ -447,7 +483,7 @@
   </dialog>
 
   <!-- QR code modal -->
-  <dialog id="qr-modal" class="modal qr-modal">
+  <dialog id="qr-modal" class="modal qr-modal" aria-labelledby="qr-title">
     <form method="dialog" class="modal-body qr-modal-body">
       <h3 id="qr-title" data-i18n="wifi.qr_title">Scan to connect</h3>
       <div id="qr-ssid" class="qr-ssid"></div>

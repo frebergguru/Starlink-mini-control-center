@@ -140,14 +140,47 @@
 
   const renderKV = (container, entries) => {
     container.replaceChildren();
-    for (const [label, value, cls] of entries) {
+    for (const [label, value, cls, tip] of entries) {
       const dd = el("dd", { text: fmtValue(value) });
       if (isMissing(value)) dd.classList.add("na");
       if (cls) dd.classList.add(cls);
-      container.appendChild(
-        el("div", {}, [el("dt", { text: label }), dd])
-      );
+      const row = el("div", {}, [el("dt", { text: label }), dd]);
+      if (tip) row.title = tip;
+      container.appendChild(row);
     }
+  };
+
+  const i18nOpt = (key) => {
+    const v = i18n.t(key);
+    return v === key ? null : v;
+  };
+
+  const SWU_STATE_TONE = {
+    IDLE: "good",
+    DISABLED: "off",
+    DOWNLOADING: "warn",
+    FETCHING: "warn",
+    VERIFYING: "warn",
+    STAGED: "warn",
+    REBOOT_REQUIRED: "warn",
+    FAILED: "bad",
+  };
+
+  const renderSoftwareUpdateState = (state) => {
+    const host = $("#cfg-swu-state");
+    if (!host) return;
+    host.replaceChildren();
+    if (state == null || state === "") return;
+    const tone = SWU_STATE_TONE[state] || "neutral";
+    const label = i18nOpt(`swu.state.${String(state).toLowerCase()}`) || String(state);
+    host.appendChild(
+      el("span", {
+        class: "chip swu-state-chip",
+        "data-tone": tone,
+        title: i18nOpt("swu.state.tooltip") || "",
+        text: label,
+      })
+    );
   };
 
   // ───── API layer ─────
@@ -197,9 +230,13 @@
       confirmMsg.textContent = message;
       confirmOk.textContent = okLabel;
       confirmOk.className = `btn ${danger ? "btn-danger" : "btn-primary"}`;
+      const opener = document.activeElement;
       confirmModal.showModal();
       const handler = () => {
         confirmModal.removeEventListener("close", handler);
+        if (opener && typeof opener.focus === "function") {
+          try { opener.focus(); } catch {}
+        }
         resolve(confirmModal.returnValue === "ok");
       };
       confirmModal.addEventListener("close", handler);
@@ -243,14 +280,46 @@
   const initTabs = () => {
     const tabs = $$(".tab");
     const panels = $$(".tab-panel");
-    tabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        tabs.forEach((t) => t.setAttribute("aria-selected", "false"));
-        tab.setAttribute("aria-selected", "true");
-        const id = tab.dataset.tab;
-        panels.forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${id}`));
-        if (id === "history") refreshHistory();
-        if (id === "router") refreshRouter();
+
+    const activate = (tab, { focusTab = false, focusPanel = false } = {}) => {
+      tabs.forEach((t) => {
+        const selected = t === tab;
+        t.setAttribute("aria-selected", selected ? "true" : "false");
+        t.setAttribute("tabindex", selected ? "0" : "-1");
+      });
+      const id = tab.dataset.tab;
+      panels.forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${id}`));
+      if (focusTab) tab.focus();
+      if (focusPanel) {
+        const panel = document.getElementById(`tab-${id}`);
+        if (panel) panel.focus();
+      }
+      if (id === "history") refreshHistory();
+      if (id === "router") refreshRouter();
+    };
+
+    tabs.forEach((tab, idx) => {
+      tab.addEventListener("click", () => activate(tab));
+      tab.addEventListener("keydown", (e) => {
+        let target = null;
+        switch (e.key) {
+          case "ArrowRight":
+            target = tabs[(idx + 1) % tabs.length];
+            break;
+          case "ArrowLeft":
+            target = tabs[(idx - 1 + tabs.length) % tabs.length];
+            break;
+          case "Home":
+            target = tabs[0];
+            break;
+          case "End":
+            target = tabs[tabs.length - 1];
+            break;
+          default:
+            return;
+        }
+        e.preventDefault();
+        activate(target, { focusTab: true });
       });
     });
   };
@@ -261,12 +330,19 @@
     const dot = document.getElementById(dotId);
     const addr = document.getElementById(addrId);
     if (!dot || !addr) return;
-    if (info && info.connected) {
-      dot.dataset.state = "connected";
-    } else {
-      dot.dataset.state = "disconnected";
-    }
+    const connected = !!(info && info.connected);
+    const nextState = info ? (connected ? "connected" : "disconnected") : "unknown";
+    dot.dataset.state = nextState;
     addr.textContent = (info && info.address) || "";
+
+    const isDish = dotId === "conn-dot";
+    const srEl = document.getElementById(isDish ? "conn-sr" : "router-conn-sr");
+    if (srEl) {
+      const roleLabel = i18n.t(isDish ? "conn.dish" : "conn.router");
+      const stateLabel = i18n.t(`a11y.conn_state.${nextState}`);
+      const nextText = `${roleLabel}: ${stateLabel}`;
+      if (srEl.textContent !== nextText) srEl.textContent = nextText;
+    }
   };
 
   const refreshState = async () => {
@@ -336,6 +412,7 @@
     const mobility = pick(s, "mobility_class") || "—";
     const classOfService = pick(s, "class_of_service", "classOfService");
     const updateState = pick(s, "software_update_state", "softwareUpdateState");
+    renderSoftwareUpdateState(updateState);
     const eth = pick(s, "eth_speed_mbps", "ethSpeedMbps");
     const selfTest = lastDiagnostics ? pick(lastDiagnostics, "hardware_self_test", "hardwareSelfTest") : null;
     const selfTestText =
@@ -347,7 +424,7 @@
       [i18n.t("kv.disablement"), disablement, disablement === "OKAY" ? "good" : "warn"],
       [i18n.t("kv.mobility_class"), mobility],
       [i18n.t("kv.uptime"), fmtUptime(up)],
-      [i18n.t("kv.class_of_service"), classOfService],
+      [i18n.t("kv.class_of_service"), classOfService, null, i18nOpt("kv.class_of_service.tooltip")],
       [i18n.t("kv.software_update"), updateState],
       [i18n.t("kv.ethernet_speed"), eth ? i18n.t("units.eth_speed", { n: eth }) : null],
       [i18n.t("kv.self_test"), selfTestText, selfTestCls],
@@ -384,12 +461,13 @@
     const rs = pick(s, "ready_states", "readyStates") || {};
     const signalClass = snrBool == null ? null : (snrBool ? "good" : "warn");
     const signalEntries = [
-      [i18n.t("kv.snr"), snrDisplay === "—" ? null : snrDisplay, signalClass],
-      [i18n.t("kv.class_of_service"), classOfService],
+      [i18n.t("kv.snr"), snrDisplay === "—" ? null : snrDisplay, signalClass, i18nOpt("kv.snr.tooltip")],
+      [i18n.t("kv.class_of_service"), classOfService, null, i18nOpt("kv.class_of_service.tooltip")],
       [i18n.t("kv.software_update"), updateState],
     ];
     for (const [k, v] of Object.entries(rs)) {
-      signalEntries.push([titleCase(k), v, v === true ? "good" : v === false ? "bad" : null]);
+      const tip = i18nOpt(`ready.${String(k).toLowerCase().replace(/_/g, "")}`);
+      signalEntries.push([titleCase(k), v, v === true ? "good" : v === false ? "bad" : null, tip]);
     }
     renderKV($("#kv-signal"), signalEntries);
 
@@ -402,7 +480,7 @@
       [i18n.t("kv.gps_valid"), gps.gps_valid, gps.gps_valid === true ? "good" : gps.gps_valid === false ? "bad" : null],
       [i18n.t("kv.satellites"), gps.gps_sats],
       [i18n.t("kv.tilt"), fmtDeg(tilt)],
-      [i18n.t("kv.azimuth"), fmtDeg(az)],
+      [i18n.t("kv.azimuth"), fmtDeg(az), null, i18nOpt("kv.azimuth.tooltip")],
       [i18n.t("kv.elevation"), fmtDeg(elev)],
     ];
     if (!lastLocation) renderKV($("#kv-location"), fallbackEntries);
@@ -761,6 +839,7 @@
 
     const entryInput = el("input", {
       type: "password",
+      name: "wifi-password",
       class: "wifi-net-pass-input",
       placeholder: i18n.t("wifi.password_placeholder"),
       autocomplete: "off",
@@ -1365,7 +1444,7 @@
     };
 
     renderKV($("#kv-alignment"), [
-      [i18n.t("kv.azimuth"), isFinite(az) ? `${nfix(az, 2)}°` : null],
+      [i18n.t("kv.azimuth"), isFinite(az) ? `${nfix(az, 2)}°` : null, null, i18nOpt("kv.azimuth.tooltip")],
       [i18n.t("kv.elevation"), isFinite(el) ? `${nfix(el, 2)}°` : null],
       [i18n.t("kv.tilt"), isFinite(tilt) ? `${nfix(tilt, 2)}°` : null],
       [i18n.t("kv.uncertainty"), isFinite(unc) ? `±${nfix(unc, 2)}°` : null],
@@ -1791,9 +1870,109 @@
 
   const SVG_NS = "http://www.w3.org/2000/svg";
 
-  const renderSparkline = (samples) => {
+  const initSparklineHover = () => {
+    const wraps = $$(".sparkline-wrap");
+    for (const wrap of wraps) {
+      const svg = wrap.querySelector(".sparkline");
+      if (!svg) continue;
+
+      const overlay = el("div", { class: "spark-overlay" });
+      const crosshair = el("div", { class: "spark-crosshair", hidden: true });
+      const tooltip = el("div", { class: "spark-tooltip", hidden: true });
+      overlay.appendChild(crosshair);
+      overlay.appendChild(tooltip);
+      wrap.appendChild(overlay);
+      const dots = [];
+
+      const ensureDots = (n) => {
+        while (dots.length < n) {
+          const dot = el("div", { class: "spark-dot", hidden: true });
+          overlay.appendChild(dot);
+          dots.push(dot);
+        }
+      };
+
+      const hide = () => {
+        crosshair.hidden = true;
+        tooltip.hidden = true;
+        for (const d of dots) d.hidden = true;
+      };
+
+      const update = (clientX) => {
+        const data = svg._hoverData;
+        if (!data || !data.length) { hide(); return; }
+        const rect = overlay.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) { hide(); return; }
+
+        const clamped = Math.max(rect.left, Math.min(rect.right, clientX));
+        const xRatio = (clamped - rect.left) / rect.width;
+        const idx = Math.max(
+          0,
+          Math.min(data.length - 1, Math.floor(xRatio * data.length))
+        );
+        const xPx = (idx / data.length) * rect.width;
+        const range = data.peak - data.floor || 1;
+
+        crosshair.style.left = `${xPx}px`;
+        crosshair.hidden = false;
+
+        ensureDots(data.series.length);
+        const lines = [];
+        for (let i = 0; i < data.series.length; i++) {
+          const s = data.series[i];
+          const raw = Number(s.samples[idx]);
+          const dot = dots[i];
+          if (!isFinite(raw)) {
+            dot.hidden = true;
+            lines.push({ label: s.label, value: "—", color: s.color });
+            continue;
+          }
+          const yRatio = 1 - (raw - data.floor) / range;
+          dot.style.left = `${xPx}px`;
+          dot.style.top = `${Math.max(0, Math.min(1, yRatio)) * rect.height}px`;
+          dot.style.background = s.color;
+          dot.style.color = s.color;
+          dot.hidden = false;
+          lines.push({ label: s.label, value: s.format(raw), color: s.color });
+        }
+
+        const latestIdx = data.length - 1;
+        const secondsAgo = latestIdx - idx;
+        const sampleDate = new Date(data.anchorTime - secondsAgo * 1000);
+        const timeStr = `${i18n.fmtDate(sampleDate)} ${i18n.fmtTime(sampleDate)}`;
+
+        tooltip.replaceChildren();
+        tooltip.appendChild(el("div", { class: "spark-tooltip-time", text: timeStr }));
+        for (const line of lines) {
+          const row = el("div", { class: "spark-tooltip-line" }, [
+            el("span", { class: "spark-tooltip-swatch" }),
+            el("span", { class: "spark-tooltip-label", text: `${line.label}:` }),
+            el("span", { class: "spark-tooltip-value", text: line.value }),
+          ]);
+          row.firstChild.style.background = line.color;
+          tooltip.appendChild(row);
+        }
+        tooltip.hidden = false;
+
+        const tw = tooltip.offsetWidth;
+        let left = Math.round(xPx - tw / 2);
+        const maxLeft = Math.max(0, rect.width - tw - 2);
+        if (left < 2) left = 2;
+        if (left > maxLeft) left = maxLeft;
+        tooltip.style.left = `${left}px`;
+      };
+
+      wrap.addEventListener("pointermove", (e) => update(e.clientX));
+      wrap.addEventListener("pointerdown", (e) => update(e.clientX));
+      wrap.addEventListener("pointerleave", hide);
+      wrap.addEventListener("pointercancel", hide);
+    }
+  };
+
+  const renderSparkline = (samples, hoverMeta) => {
     const svg = $("#power-spark");
     svg.replaceChildren();
+    svg._hoverData = null;
     const nums = [];
     for (const v of samples || []) {
       const n = Number(v);
@@ -1852,7 +2031,124 @@
     svg.appendChild(line);
 
     const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+
+    if (hoverMeta) {
+      svg._hoverData = {
+        length: samples.length,
+        floor: min,
+        peak: max,
+        anchorTime: Date.now(),
+        series: [{
+          label: hoverMeta.label,
+          samples,
+          color: hoverMeta.color,
+          format: hoverMeta.format,
+        }],
+      };
+    }
+
     return { min, max, avg };
+  };
+
+  const seriesStats = (samples) => {
+    const nums = [];
+    for (const v of samples || []) {
+      const n = Number(v);
+      if (isFinite(n)) nums.push(n);
+    }
+    if (!nums.length) return { min: null, max: null, avg: null, last: null };
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
+    const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+    let last = null;
+    for (let i = samples.length - 1; i >= 0; i--) {
+      const n = Number(samples[i]);
+      if (isFinite(n)) { last = n; break; }
+    }
+    return { min, max, avg, last };
+  };
+
+  const renderDualSparkline = (svg, seriesA, seriesB, opts) => {
+    svg.replaceChildren();
+    svg._hoverData = null;
+    const { colorA, colorB, labelA, labelB, gradPrefix, format } = opts;
+    const lenA = (seriesA || []).length;
+    const lenB = (seriesB || []).length;
+    if (lenA < 2 && lenB < 2) return;
+
+    let peak = 0;
+    for (const v of seriesA || []) { const n = Number(v); if (isFinite(n) && n > peak) peak = n; }
+    for (const v of seriesB || []) { const n = Number(v); if (isFinite(n) && n > peak) peak = n; }
+    if (peak <= 0) peak = 1;
+
+    const W = Math.max(lenA, lenB);
+    const H = 100;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+    const buildPoints = (samples) => {
+      const pts = [];
+      for (let i = 0; i < samples.length; i++) {
+        const n = Number(samples[i]);
+        if (!isFinite(n)) continue;
+        const y = H - (n / peak) * H;
+        pts.push(`${i},${y.toFixed(1)}`);
+      }
+      return pts.join(" ");
+    };
+
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const makeGrad = (id, color) => {
+      const grad = document.createElementNS(SVG_NS, "linearGradient");
+      grad.setAttribute("id", id);
+      grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
+      grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
+      const s1 = document.createElementNS(SVG_NS, "stop");
+      s1.setAttribute("offset", "0%");
+      s1.setAttribute("stop-color", color);
+      s1.setAttribute("stop-opacity", "0.45");
+      const s2 = document.createElementNS(SVG_NS, "stop");
+      s2.setAttribute("offset", "100%");
+      s2.setAttribute("stop-color", color);
+      s2.setAttribute("stop-opacity", "0");
+      grad.appendChild(s1); grad.appendChild(s2);
+      defs.appendChild(grad);
+    };
+    const gradA = `${gradPrefix}-a`;
+    const gradB = `${gradPrefix}-b`;
+    makeGrad(gradA, colorA);
+    makeGrad(gradB, colorB);
+    svg.appendChild(defs);
+
+    const addSeries = (samples, gradId, stroke) => {
+      if (!samples || samples.length < 2) return;
+      const pointsStr = buildPoints(samples);
+      if (!pointsStr) return;
+      const area = document.createElementNS(SVG_NS, "polygon");
+      area.setAttribute("points", `0,${H} ${pointsStr} ${samples.length - 1},${H}`);
+      area.setAttribute("fill", `url(#${gradId})`);
+      svg.appendChild(area);
+      const line = document.createElementNS(SVG_NS, "polyline");
+      line.setAttribute("points", pointsStr);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", stroke);
+      line.setAttribute("stroke-width", "1.4");
+      line.setAttribute("vector-effect", "non-scaling-stroke");
+      line.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(line);
+    };
+    addSeries(seriesA, gradA, colorA);
+    addSeries(seriesB, gradB, colorB);
+
+    svg._hoverData = {
+      length: W,
+      floor: 0,
+      peak,
+      anchorTime: Date.now(),
+      series: [
+        { label: labelA, samples: seriesA, color: colorA, format },
+        { label: labelB, samples: seriesB, color: colorB, format },
+      ],
+    };
   };
 
   const fmtDurationNs = (ns) => {
@@ -1954,7 +2250,11 @@
     if (!h || typeof h !== "object") return;
 
     const power = h.power_in || h.powerIn || [];
-    const { min, max, avg } = renderSparkline(power);
+    const { min, max, avg } = renderSparkline(power, {
+      label: i18n.t("card.power_draw"),
+      color: "#7ddcff",
+      format: (v) => `${nfix(v, 1)} ${i18n.t("units.w")}`,
+    });
     const last = [...power].reverse().find((v) => isFinite(Number(v)));
     const lastN = last != null ? Number(last) : null;
     $("#power-current").textContent = lastN != null ? nfix(lastN, 1) : "—";
@@ -1970,6 +2270,39 @@
     } else {
       pill.textContent = i18n.t("pill.no_data");
       pill.dataset.state = "warn";
+    }
+
+    const dlSamples = h.downlink_throughput_bps || h.downlinkThroughputBps || [];
+    const ulSamples = h.uplink_throughput_bps || h.uplinkThroughputBps || [];
+    const tpSvg = $("#tp-hist-spark");
+    if (tpSvg) {
+      renderDualSparkline(tpSvg, dlSamples, ulSamples, {
+        colorA: "#5cdf8f",
+        colorB: "#6aa9ff",
+        labelA: i18n.t("tp.download"),
+        labelB: i18n.t("tp.upload"),
+        gradPrefix: "tp-hist-grad",
+        format: fmtBps,
+      });
+    }
+    const dlStats = seriesStats(dlSamples);
+    const ulStats = seriesStats(ulSamples);
+    const dlFmt = (v) => (v != null ? fmtBps(v) : "—");
+    $("#tp-hist-dl-now").textContent = dlFmt(dlStats.last);
+    $("#tp-hist-ul-now").textContent = dlFmt(ulStats.last);
+    $("#tp-hist-dl-max").textContent = dlFmt(dlStats.max);
+    $("#tp-hist-dl-avg").textContent = dlFmt(dlStats.avg);
+    $("#tp-hist-ul-max").textContent = dlFmt(ulStats.max);
+    $("#tp-hist-ul-avg").textContent = dlFmt(ulStats.avg);
+    const tpWindow = Math.max(dlSamples.length, ulSamples.length);
+    $("#tp-hist-window").textContent = tpWindow ? `${tpWindow}${i18n.t("units.s")}` : "—";
+    const tpPill = $("#tp-hist-pill");
+    if (dlStats.last != null || ulStats.last != null) {
+      tpPill.textContent = i18n.t("pill.live");
+      tpPill.dataset.state = "OKAY";
+    } else {
+      tpPill.textContent = i18n.t("pill.no_data");
+      tpPill.dataset.state = "warn";
     }
 
     renderOutages(h.outages || []);
@@ -2558,6 +2891,7 @@
     initActions();
     initAdvanced();
     initAlignmentToggle();
+    initSparklineHover();
     initLangSwitcher();
     initLockButton();
     ensureObsAnimation();

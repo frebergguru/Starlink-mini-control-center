@@ -73,8 +73,15 @@ Live dish state, refreshed on a timer (toggle with **Live refresh**):
 
 - **Power Draw** — current watts plus sparkline, min / max / avg, sample
   window
+- **Throughput History** — dual sparkline of download (green) and
+  upload (blue) over the last ~15 minutes, with per-series max/avg and
+  the current value for each direction
 - **Outages** — recent outages with duration and cause
 - **Event Log** — timestamped events reported by the dish
+
+Both sparklines are interactive: hover (or tap) anywhere on the graph
+to see a crosshair with the exact value(s) and the date/time for that
+sample.
 
 ### Router
 
@@ -149,6 +156,16 @@ needs the master password to decrypt entries.
 The UI ships with English (🇬🇧) and Norwegian Bokmål (🇳🇴). Use the
 language dropdown in the header to switch; the choice persists in
 `localStorage`.
+
+## Accessibility
+
+- Skip-to-content link for keyboard users
+- Full WAI-ARIA tab pattern on the section tabs (Arrow ← →, Home, End)
+- Visible `:focus-visible` ring on buttons, tabs, links, chips
+- Icon-only buttons have translated `aria-label`s
+- Dialogs are labelled by their headings for screen readers
+- Connection status is announced via a visually-hidden live region
+- `prefers-reduced-motion: reduce` neutralises all animations
 
 ## Requirements
 
