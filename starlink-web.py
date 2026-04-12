@@ -703,7 +703,19 @@ class Handler(BaseHTTPRequestHandler):
         uri = _wifi_uri(entry["ssid"], entry["psk"], entry.get("auth") or "WPA", hidden=False)
         qr = segno.make(uri, error="m")
         buf = io.BytesIO()
-        qr.save(buf, kind="svg", scale=10, border=2, dark="#0b0d12", light="#ffffff")
+        qr.save(
+            buf,
+            kind="svg",
+            scale=10,
+            border=4,
+            dark="#0b0d12",
+            light="#ffffff",
+            xmldecl=False,
+            svgns=True,
+            svgclass=None,
+            lineclass=None,
+            omitsize=True,
+        )
         svg = buf.getvalue()
         self.send_response(200)
         self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
