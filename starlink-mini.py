@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 STARLINK MINI · CONTROL CENTER
-Full dish telemetry, diagnostics & config for GNU/Linux
+Terminal dashboard mirroring starlink-web.py's feature set.
+
+Talks to both the dish (192.168.100.1:9200) and the router (192.168.1.1:9000)
+over gRPC. Read-only except for a single write — rebooting the dish. All
+config writers (snow-melt, power-save, level, Wi-Fi) were removed so this
+stays in lockstep with the web dashboard, which is also read-only.
 
 Install:
   chmod +x starlink-mini.py
@@ -10,7 +15,7 @@ Install:
 The script will automatically set up a virtual environment and install dependencies.
 """
 
-import json, subprocess, sys, os, shutil, time, venv, getpass, math, io, contextlib
+import json, subprocess, sys, os, shutil, time, venv, math, io, contextlib
 from datetime import datetime
 
 def setup_venv():
@@ -73,6 +78,14 @@ from google.protobuf import descriptor_pb2, descriptor_pool as dp, json_format, 
 from grpc_reflection.v1alpha import reflection_pb2, reflection_pb2_grpc
 
 DISH_ADDR = "192.168.100.1:9200"
+ROUTER_ADDR = "192.168.1.1:9000"
+
+# Sensitive field names redacted from any raw JSON display. Parity with
+# starlink-web.py's SENSITIVE_KEYS so passwords never hit the terminal.
+SENSITIVE_KEYS = frozenset({
+    "password", "pw", "secret", "token", "credential", "client_key",
+    "basic_service_set_psk",
+})
 
 class C:
     RST="\033[0m";BOLD="\033[1m";DIM="\033[2m"
@@ -196,21 +209,40 @@ def fmt_pct(v):
     return f"{v*100:.1f}%" if v<=1 else f"{v:.1f}%"
 
 def fmt_snr(v):
-    return f"{float(v):.1f} dB" if v is not None else "N/A"
+    """SNR as reported by the LAN gRPC API: current firmware returns a
+    boolean `is_snr_above_noise_floor`, older firmwares returned a numeric
+    dB value. Accept both and format accordingly."""
+    if v is None:
+        return "N/A"
+    if isinstance(v, bool):
+        return "Above floor" if v else "Below floor"
+    try:
+        return f"{float(v):.1f} dB"
+    except (TypeError, ValueError):
+        return "N/A"
 
 def fmt_deg(v):
     return f"{float(v):.2f}°" if v is not None else "N/A"
 
 
 class DishClient:
-    # Whitelist of permitted gRPC request keys (read-only and safe config operations)
+    # Whitelist of permitted gRPC request keys. Matches the parity set used by
+    # starlink-web.py — all reads plus `reboot`, nothing else. Dish-side keys
+    # are separate from router-side keys listed further below.
     PERMITTED_KEYS=frozenset([
+        # Dish reads
         "getDeviceInfo","get_device_info","getStatus","get_status",
-        "dishGetObstructionMap","dish_get_obstruction_map","getDiagnostics","get_diagnostics",
-        "getLocation","get_location","dishGetConfig","dish_get_config",
+        "dishGetObstructionMap","dish_get_obstruction_map",
+        "getDiagnostics","get_diagnostics",
+        "getLocation","get_location",
+        "dishGetConfig","dish_get_config",
         "dishGetHistoryStats","dish_get_history_stats","getHistory","get_history",
         "transceiver_get_status","transceiver_get_telemetry",
-        "wifi_set_config","dish_set_config","dish_stow","reboot"
+        # Router reads (used when this client is pointed at the router endpoint)
+        "wifi_get_clients","wifi_get_config","wifi_guest_info","wifi_self_test",
+        "wifi_get_client_history","get_network_interfaces","get_radio_stats","get_ping",
+        # Single write: dish reboot
+        "reboot",
     ])
 
     def __init__(self, addr=DISH_ADDR):
@@ -386,7 +418,7 @@ def display_device_info(data):
         if v is not None: pf(k.replace("_"," ").title(), v)
     sec_end()
 
-def display_status(data):
+def display_status(data, diag=None):
     s=sg(data,"getStatus") or sg(data,"dish_get_status") or sg(data,"dishGetStatus") or data
 
     sec("DEVICE INFO")
@@ -396,6 +428,14 @@ def display_status(data):
                   "country_code","countryCode","bootcount","generation_number","build_id"]:
             v=sg(di,k)
             if v is not None: pf(k.replace("_"," ").title(),v)
+    # Hardware self-test lives on the diagnostics endpoint, fetched alongside
+    # status by the menu handler.
+    if diag:
+        dg=sg(diag,"dish_get_diagnostics") or sg(diag,"dishGetDiagnostics") or diag
+        hst=sg(dg,"hardware_self_test") or sg(dg,"hardwareSelfTest")
+        if hst:
+            col=C.BGRN if hst == "PASSED" else C.BRED if hst == "FAILED" else C.CYN
+            pf("Hardware Self-Test",f"{col}{hst}{C.RST}")
     sec_end()
 
     sec("DISH STATUS")
@@ -408,6 +448,9 @@ def display_status(data):
     pf("Uptime",fmt_up(uptime))
     alerts=sg(s,"alerts") or {}
     active=[k for k,v in alerts.items() if v] if isinstance(alerts,dict) else []
+    heating=bool(alerts.get("is_heating") or alerts.get("dish_is_heating")) if isinstance(alerts,dict) else False
+    if heating:
+        pf("Snow Melt",f"{C.BYEL}♨ heating now{C.RST}")
     pf("Alerts","")
     if active:
         for a in active: print(f"  {C.BCYN}│{C.RST}       {C.BYEL}⚠  {a}{C.RST}")
@@ -597,6 +640,316 @@ def display_location(data):
 
     sec_end()
 
+def _short_band(b):
+    if not b: return ""
+    return str(b).replace("RF_", "").replace("2GHZ", "2.4 GHz").replace("5GHZ_HIGH", "5 GHz (high)").replace("5GHZ", "5 GHz")
+
+
+def _fmt_bytes(n):
+    if n is None: return "N/A"
+    try: v=float(n)
+    except (TypeError, ValueError): return "N/A"
+    for u in ("B","KB","MB","GB","TB"):
+        if abs(v) < 1024: return f"{v:,.0f} {u}" if u in ("B","KB") else f"{v:,.1f} {u}"
+        v /= 1024
+    return f"{v:,.1f} PB"
+
+
+def _time_ago_ns(ns):
+    try: secs=float(ns)/1e9
+    except (TypeError, ValueError): return ""
+    if secs < 1577836800: return ""
+    import time as _t
+    diff=_t.time() - secs
+    if diff < 2: return "now"
+    if diff < 60: return f"{int(diff)}s ago"
+    if diff < 3600: return f"{int(diff/60)}m ago"
+    if diff < 86400: return f"{int(diff/3600)}h ago"
+    return f"{int(diff/86400)}d ago"
+
+
+def _fmt_duration_ns(ns):
+    try: s=float(ns)/1e9
+    except (TypeError, ValueError): return "N/A"
+    if s < 1: return f"{s*1000:.0f} ms"
+    if s < 60: return f"{s:.1f} s"
+    m=int(s/60); r=int(round(s - m*60))
+    return f"{m}m {r}s" if r else f"{m}m"
+
+
+def display_history(data):
+    """Mirror the web History tab: power draw summary, outages, event log."""
+    root=sg(data,"dish_get_history") or sg(data,"dishGetHistory") or sg(data,"getHistory") or data
+    if not root:
+        sec("HISTORY"); print(f"  {C.BCYN}│{C.RST}  {C.DIM}No history data.{C.RST}"); sec_end(); return
+
+    power=sg(root,"power_in") or sg(root,"powerIn") or []
+    sec("POWER DRAW")
+    nums=[]
+    for v in power:
+        try: nums.append(float(v))
+        except (TypeError, ValueError): pass
+    if nums:
+        last=nums[-1]
+        lo=min(nums); hi=max(nums); avg=sum(nums)/len(nums)
+        pf("Current",f"{last:.1f} W")
+        pf("Min",f"{lo:.1f} W")
+        pf("Max",f"{hi:.1f} W")
+        pf("Avg",f"{avg:.1f} W")
+        pf("Window",f"{len(nums)}s")
+        # Simple sparkline using Unicode blocks
+        bars=" ▁▂▃▄▅▆▇█"
+        width=min(48, tw()-12)
+        step=max(1, len(nums)//width) if len(nums) > width else 1
+        samples=nums[::step][:width] if step > 1 else nums[-width:]
+        rng=hi - lo or 1
+        spark="".join(bars[max(0, min(len(bars)-1, int((n-lo)/rng * (len(bars)-1))))] for n in samples)
+        print(f"  {C.BCYN}│{C.RST}     {C.CYN}{spark}{C.RST}")
+    else:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No power samples.{C.RST}")
+    sec_end()
+
+    sec("OUTAGES")
+    outages=sg(root,"outages") or []
+    if isinstance(outages, list) and outages:
+        pf("Recorded", str(len(outages)))
+        sorted_out=sorted(outages, key=lambda o: float(sg(o,"start_timestamp_ns") or sg(o,"startTimestampNs") or 0), reverse=True)
+        for o in sorted_out[:12]:
+            cause=sg(o,"cause") or "UNKNOWN"
+            dur=_fmt_duration_ns(sg(o,"duration_ns") or sg(o,"durationNs"))
+            switch=sg(o,"did_switch") or sg(o,"didSwitch")
+            tag="satellite switch" if switch else "no switch"
+            print(f"  {C.BCYN}│{C.RST}    {C.BYEL}{cause:<24}{C.RST} {C.CYN}{dur:>10}{C.RST}  {C.DIM}{tag}{C.RST}")
+    else:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No outages recorded.{C.RST}")
+    sec_end()
+
+    sec("EVENT LOG")
+    event_log=sg(root,"event_log") or sg(root,"eventLog") or {}
+    events=sg(event_log,"events") or []
+    if isinstance(events, list) and events:
+        pf("Recorded", str(len(events)))
+        sorted_ev=sorted(events, key=lambda e: float(sg(e,"start_timestamp_ns") or sg(e,"startTimestampNs") or 0), reverse=True)
+        for e in sorted_ev[:12]:
+            sev=(sg(e,"severity") or "").replace("EVENT_SEVERITY_","") or "?"
+            reason=(sg(e,"reason") or "").replace("EVENT_REASON_","").replace("_"," ").title()
+            dur=_fmt_duration_ns(sg(e,"duration_ns") or sg(e,"durationNs"))
+            ago=_time_ago_ns(sg(e,"start_timestamp_ns") or sg(e,"startTimestampNs"))
+            print(f"  {C.BCYN}│{C.RST}    {C.BYEL}{sev:<10}{C.RST} {C.BWHT}{reason:<30}{C.RST} {C.CYN}{dur:>10}{C.RST}  {C.DIM}{ago}{C.RST}")
+    else:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No events recorded.{C.RST}")
+    sec_end()
+
+
+def display_router_status(data):
+    s=sg(data,"wifi_get_status") or sg(data,"get_status") or data or {}
+    di=sg(s,"device_info") or {}
+    uptime=sg(s,"device_state","uptime_s") or sg(s,"deviceState","uptimeS")
+    alerts=sg(s,"alerts") or {}
+    active=[k for k,v in alerts.items() if v] if isinstance(alerts,dict) else []
+
+    sec("ROUTER STATUS")
+    if active:
+        pf("Health", f"{C.BYEL}{len(active)} alert(s){C.RST}")
+    else:
+        pf("Health", f"{C.BGRN}HEALTHY{C.RST}")
+    pf("Uptime", fmt_up(uptime))
+    for label, key in (("Ping to Dish","dish_ping_latency_ms"),
+                       ("Ping to PoP","pop_ping_latency_ms"),
+                       ("Ping (WAN)","ping_latency_ms")):
+        v=sg(s,key)
+        if v is not None:
+            try: pf(label, f"{float(v):.1f} ms")
+            except (TypeError, ValueError): pf(label, v)
+    sec_end()
+
+    sec("ROUTER DEVICE")
+    for label, key in (("Router ID","id"),
+                       ("Hardware","hardware_version"),
+                       ("Software","software_version"),
+                       ("Country","country_code"),
+                       ("Boot Count","bootcount"),
+                       ("Dish Cohoused","dish_cohoused")):
+        v=sg(di,key)
+        if v is not None: pf(label, v)
+    ipv4=sg(s,"ipv4_wan_address")
+    if ipv4: pf("IPv4 WAN", ipv4)
+    ipv6_list=sg(s,"ipv6_wan_addresses")
+    if isinstance(ipv6_list, list) and ipv6_list: pf("IPv6 WAN", ipv6_list[0])
+    leases=sg(s,"dhcp_servers") or []
+    if isinstance(leases, list):
+        total=sum(len(sg(srv,"leases") or []) for srv in leases)
+        if total: pf("DHCP Leases", total)
+    if active:
+        pf("Active Alerts", ", ".join(active))
+    sec_end()
+
+
+def display_router_clients(data):
+    resp=sg(data,"wifi_get_clients") or sg(data,"wifiGetClients") or data or {}
+    clients=sg(resp,"clients") or []
+    sec("WIFI CLIENTS")
+    if not clients:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No clients connected.{C.RST}"); sec_end(); return
+    pf("Connected", str(len(clients)))
+    def rank(c):
+        role=sg(c,"role") or ""
+        sig=sg(c,"signal_strength")
+        try: sig=float(sig) if sig is not None else -999
+        except (TypeError, ValueError): sig=-999
+        return (0 if role == "CONTROLLER" else 1, -sig)
+    for c in sorted(clients, key=rank):
+        name=sg(c,"name") or sg(c,"hostname") or sg(c,"given_name") or sg(c,"mac_address") or "unnamed"
+        mac=sg(c,"mac_address") or ""
+        ip=sg(c,"ip_address") or ""
+        band=_short_band(sg(c,"iface"))
+        rssi=sg(c,"signal_strength")
+        role=sg(c,"role")
+        tag=f"{C.BYEL}CTRL{C.RST} " if role == "CONTROLLER" else ""
+        sub=" · ".join(x for x in (mac, ip) if x)
+        meta=[]
+        if rssi is not None:
+            try: meta.append(f"{float(rssi):.0f} dBm")
+            except (TypeError, ValueError): pass
+        if band: meta.append(band)
+        print(f"  {C.BCYN}│{C.RST}  {tag}{C.BWHT}{name}{C.RST}")
+        if sub: print(f"  {C.BCYN}│{C.RST}    {C.DIM}{sub}{C.RST}")
+        if meta: print(f"  {C.BCYN}│{C.RST}    {C.CYN}{'  '.join(meta)}{C.RST}")
+    sec_end()
+
+
+def display_router_networks(data):
+    resp=sg(data,"wifi_get_config") or sg(data,"wifiGetConfig") or data or {}
+    cfg=sg(resp,"wifi_config") or sg(resp,"wifiConfig") or resp
+    networks=sg(cfg,"networks") or []
+    sec("WIFI NETWORKS")
+    if not networks:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No WiFi networks configured.{C.RST}"); sec_end(); return
+    for net in networks:
+        bss=sg(net,"basic_service_sets") or []
+        ssid=sg(bss[0],"ssid") if bss else "(hidden)"
+        is_guest=bool(sg(net,"guest"))
+        isolated=bool(sg(net,"client_isolation"))
+        tags=[]
+        if is_guest: tags.append(f"{C.BYEL}GUEST{C.RST}")
+        if isolated: tags.append(f"{C.BYEL}ISOLATED{C.RST}")
+        tag_str=("  " + "  ".join(tags)) if tags else ""
+        print(f"  {C.BCYN}│{C.RST}  {C.BWHT}{ssid}{C.RST}{tag_str}")
+        bands=[_short_band(sg(b,"band")) for b in bss]
+        bands=[b for b in bands if b]
+        if bands: print(f"  {C.BCYN}│{C.RST}    {C.CYN}{'  '.join(bands)}{C.RST}")
+        meta=[]
+        ipv4=sg(net,"ipv4")
+        if ipv4: meta.append(str(ipv4))
+        domain=sg(net,"domain")
+        if domain: meta.append(f"domain {domain}")
+        vlan=sg(net,"vlan")
+        if vlan: meta.append(f"VLAN {vlan}")
+        lease=sg(net,"dhcpv4_lease_duration_s")
+        if lease: meta.append(f"DHCP lease {lease}s")
+        if meta: print(f"  {C.BCYN}│{C.RST}    {C.DIM}{' · '.join(meta)}{C.RST}")
+        # Passwords are redacted per SENSITIVE_KEYS. This is intentional — the
+        # router returns bullet characters over the LAN API anyway.
+        print(f"  {C.BCYN}│{C.RST}    {C.DIM}password: [REDACTED]{C.RST}")
+    sec_end()
+
+
+def display_router_radios(data):
+    resp=sg(data,"get_radio_stats") or data or {}
+    radios=sg(resp,"radio_stats") or []
+    sec("RADIO STATS")
+    if not radios:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No radio data.{C.RST}"); sec_end(); return
+    for r in radios:
+        band=_short_band(sg(r,"band"))
+        thermal=sg(r,"thermal_status") or {}
+        temp=sg(thermal,"temp2")
+        duty=sg(thermal,"duty_cycle")
+        rx=sg(r,"rx_stats") or {}
+        tx=sg(r,"tx_stats") or {}
+        header=f"{C.BWHT}{band or '?'}{C.RST}"
+        if temp is not None:
+            try: header += f"  {C.CYN}{float(temp):.0f}°C{C.RST}"
+            except (TypeError, ValueError): pass
+        print(f"  {C.BCYN}│{C.RST}  {header}")
+        stats=[
+            ("RX", _fmt_bytes(sg(rx,"bytes"))),
+            ("TX", _fmt_bytes(sg(tx,"bytes"))),
+            ("RX pkts", sg(rx,"packets") or "—"),
+            ("TX pkts", sg(tx,"packets") or "—"),
+            ("Duty", f"{duty}%" if duty is not None else "—"),
+        ]
+        print(f"  {C.BCYN}│{C.RST}    " + "  ".join(f"{C.DIM}{k}{C.RST} {C.CYN}{v}{C.RST}" for k, v in stats))
+    sec_end()
+
+
+def display_router_selftest(data):
+    resp=sg(data,"wifi_self_test") or data or {}
+    st=sg(resp,"self_test") or {}
+    rows=[]
+    def push(name, obj):
+        if not isinstance(obj, dict): return
+        rows.append((name, bool(obj.get("success")), obj.get("failure_reason") or ""))
+    for k, v in (st.items() if isinstance(st, dict) else []):
+        if isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    push(sg(item,"name") or k, item)
+        elif isinstance(v, dict):
+            push(sg(v,"name") or k, v)
+    sec("SELF-TEST")
+    if not rows:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No self-test results.{C.RST}"); sec_end(); return
+    for name, passed, reason in rows:
+        icon=f"{C.BGRN}✔{C.RST}" if passed else f"{C.BRED}✘{C.RST}"
+        label=f"{C.BWHT}{name}{C.RST}"
+        if passed:
+            print(f"  {C.BCYN}│{C.RST}  {icon}  {label}  {C.BGRN}pass{C.RST}")
+        else:
+            print(f"  {C.BCYN}│{C.RST}  {icon}  {label}  {C.BRED}fail{C.RST}")
+            if reason:
+                print(f"  {C.BCYN}│{C.RST}      {C.DIM}{reason}{C.RST}")
+    sec_end()
+
+
+def display_router_interfaces(data):
+    resp=sg(data,"get_network_interfaces") or data or {}
+    ifaces=sg(resp,"network_interfaces") or []
+    sec("NETWORK INTERFACES")
+    if not ifaces:
+        print(f"  {C.BCYN}│{C.RST}  {C.DIM}No interfaces reported.{C.RST}"); sec_end(); return
+    up_count=sum(1 for i in ifaces if sg(i,"up"))
+    pf("Up", f"{up_count}/{len(ifaces)}")
+    for iface in ifaces:
+        name=sg(iface,"name") or "?"
+        up=bool(sg(iface,"up"))
+        state=f"{C.BGRN}up{C.RST}" if up else f"{C.BRED}down{C.RST}"
+        kind=""
+        if sg(iface,"ethernet"): kind="ETH"
+        elif sg(iface,"wifi"): kind="WIFI"
+        print(f"  {C.BCYN}│{C.RST}  {C.BWHT}{name}{C.RST}  {C.DIM}{kind}{C.RST}  {state}")
+        ipv4=sg(iface,"ipv4_addresses") or []
+        ipv6=sg(iface,"ipv6_addresses") or []
+        addrs=" · ".join(list(ipv4) + list(ipv6)[:1])
+        if addrs: print(f"  {C.BCYN}│{C.RST}    {C.CYN}{addrs}{C.RST}")
+        mac=sg(iface,"mac_address")
+        meta=[]
+        if mac: meta.append(f"mac {mac}")
+        eth=sg(iface,"ethernet") or {}
+        if eth:
+            speed=sg(eth,"speed_mbps") or "?"
+            duplex=sg(eth,"duplex") or ""
+            meta.append(f"link {speed} Mbps {duplex}".strip())
+        wifi=sg(iface,"wifi") or {}
+        ch=sg(wifi,"channel")
+        if ch: meta.append(f"ch {ch}")
+        rxB=sg(sg(iface,"rx_stats") or {}, "bytes")
+        txB=sg(sg(iface,"tx_stats") or {}, "bytes")
+        if rxB or txB: meta.append(f"rx/tx {_fmt_bytes(rxB)} / {_fmt_bytes(txB)}")
+        if meta: print(f"  {C.BCYN}│{C.RST}    {C.DIM}{'  '.join(meta)}{C.RST}")
+    sec_end()
+
+
 def display_obstruction_map(data):
     om=sg(data,"dishGetObstructionMap") or sg(data,"dish_get_obstruction_map") or data
     snr=sg(om,"snr") or []; nr=int(sg(om,"num_rows") or sg(om,"numRows") or 0)
@@ -642,25 +995,18 @@ def display_generic(data, title="RESPONSE"):
     sec(title); _pd(data); sec_end()
 
 def scrub_sensitive_data(data):
-    """Remove sensitive fields (passwords, credentials) from response data before display."""
-    if data is None or not isinstance(data, dict):
+    """Recursively redact sensitive fields (passwords, etc.) from response
+    data before display. Matches starlink-web.py's _scrub semantics."""
+    if data is None:
         return data
-    scrubbed = json.loads(json.dumps(data))  # Deep copy
-    # Recursively scrub sensitive keys
-    def scrub_dict(d):
-        if not isinstance(d, dict):
-            return
-        for key in list(d.keys()):
-            if key.lower() in ("password", "pw", "secret", "token", "credential"):
-                d[key] = "[REDACTED]"
-            elif isinstance(d[key], dict):
-                scrub_dict(d[key])
-            elif isinstance(d[key], list):
-                for item in d[key]:
-                    if isinstance(item, dict):
-                        scrub_dict(item)
-    scrub_dict(scrubbed)
-    return scrubbed
+    if isinstance(data, dict):
+        return {
+            k: ("[REDACTED]" if k.lower() in SENSITIVE_KEYS else scrub_sensitive_data(v))
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [scrub_sensitive_data(x) for x in data]
+    return data
 
 def display_raw(data, title="RAW JSON"):
     sec(title)
@@ -676,87 +1022,37 @@ def display_raw(data, title="RAW JSON"):
 def mo(k,l,d="",ic=""):
     print(f"  {C.BCYN}{C.BOLD}  [{k:>2}]{C.RST}  {ic} {C.BWHT}{l}{C.RST}"+(f"  {C.DIM}{d}{C.RST}" if d else ""))
 
-def main_menu(conn):
+def main_menu(dish_conn, router_conn):
     clear(); banner()
-    st=f"{C.BGRN}● Connected{C.RST}" if conn else f"{C.BRED}● Disconnected{C.RST}"
-    print(f"  {C.BOLD}Status:{C.RST} {st}"); print()
-    hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} INFORMATION & TELEMETRY{C.RST}"); hr("─",C.DIM)
+    ds=f"{C.BGRN}● Dish{C.RST}" if dish_conn else f"{C.BRED}● Dish{C.RST}"
+    rs=f"{C.BGRN}● Router{C.RST}" if router_conn else f"{C.BRED}● Router{C.RST}"
+    print(f"  {C.BOLD}Status:{C.RST} {ds}  {rs}"); print()
+    hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} DISH TELEMETRY{C.RST}"); hr("─",C.DIM)
     mo("1","Device Info","hardware, software, IDs","🛰")
-    mo("2","Dish Status","state, signal, GPS, temps","📡")
-    mo("3","Obstruction Map","visual obstruction grid","🗺")
-    mo("4","Location","GPS lat/lon, altitude, speed","🗺")
-    mo("5","Diagnostics","internal diagnostics","🩺")
-    print(); hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} CONFIGURATION{C.RST}"); hr("─",C.DIM)
-    mo("6","View Dish Config","snow melt, power save","⚙")
-    mo("7","Set Snow Melt Mode","off / auto","❄")
-    mo("8","Set Power Save","start time & duration","🔋")
-    mo("9","Set Dish Level Mode","tilt like bracket / force level","📐")
-    mo("10","Set WiFi Network","SSID & password","🌐")
+    mo("2","Dish Status","state, signal, alignment, alerts","📡")
+    mo("3","GPS & Location","lat/lon, altitude, maps link","🗺")
+    mo("4","Obstruction Map","visual obstruction grid","🗺")
+    mo("5","History","power draw, outages, events","📈")
+    mo("6","Dish Config","snow melt, power save, updates","⚙")
+    mo("7","Diagnostics","internal diagnostics","🩺")
+    print(); hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} ROUTER{C.RST}"); hr("─",C.DIM)
+    mo("8","Router Status","uptime, pings, device info","🛜")
+    mo("9","WiFi Clients","connected devices","👥")
+    mo("10","WiFi Networks","SSIDs, bands, VLANs","📶")
+    mo("11","Radio Stats","temp, RX/TX, duty","📻")
+    mo("12","Self-test","wifi self-test results","✅")
+    mo("13","Network Interfaces","up/down, addrs, MACs","🔌")
     print(); hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} ACTIONS{C.RST}"); hr("─",C.DIM)
-    mo("11","Reboot Dish","restart the dish","🔄")
-    mo("12","Reboot WiFi","restart the WiFi module","📡")
+    mo("14","Reboot Dish","restart the dish","🔄")
+    mo("15","Ping 192.168.100.1","quick connectivity test","⚡")
+    mo("16","Export Full Dump","dish+router data to JSON","💾")
     print(); hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} ADVANCED{C.RST}"); hr("─",C.DIM)
-    mo("13","Ping Dish","quick connectivity test","⚡")
-    mo("14","List gRPC Methods","all services & methods","🔍")
-    mo("15","List Request Fields","all API request types","📋")
-    mo("16","Raw gRPC Request","send custom JSON","💻")
-    mo("17","Export All Data","full dump to JSON","💾")
-    mo("18","Continuous Monitor","live status dashboard","📺")
-    mo("19","Reconnect","re-establish gRPC channel","🔗")
+    mo("17","gRPC Services","list services & methods","🔍")
+    mo("18","Request Fields","all API request types","📋")
+    mo("19","Raw gRPC Request","send custom JSON","💻")
+    mo("20","Live Monitor","auto-refreshing status","📺")
+    mo("21","Reconnect","re-establish dish+router","🔗")
     print(); hr("─",C.DIM); mo("q","Quit","","👋"); print()
-
-# ── Config setters ────────────────────────────────────────────
-
-def config_snow_melt(d):
-    print(f"\n  {C.BOLD}Snow Melt Mode:{C.RST}")
-    print(f"    {C.CYN}1{C.RST} = OFF\n    {C.CYN}2{C.RST} = AUTO")
-    ch=input(f"\n  Select [1-2]: ").strip()
-    modes={"1":"SNOW_MELT_MODE_OFF","2":"SNOW_MELT_MODE_AUTO"}
-    m=modes.get(ch)
-    if not m: ps("Invalid.",ok=False); return
-    if not confirm(f"Set snow melt → {m}?"): return
-    r=d.request("dish_set_config",{"dish_config":{"snow_melt_mode":m}})
-    display_raw(r,"SET SNOW MELT RESULT")
-
-def config_power_save(d):
-    print(f"\n  {C.BOLD}Power Save Schedule{C.RST} {C.DIM}(minutes from midnight UTC){C.RST}")
-    try:
-        start=int(input("  Start minute (0-1439): ").strip())
-        dur=int(input("  Duration (0-1440): ").strip())
-    except ValueError: ps("Invalid number.",ok=False); return
-    if not (0 <= start <= 1439): ps("Start minute must be 0-1439.",ok=False); return
-    if not (0 <= dur <= 1440): ps("Duration must be 0-1440.",ok=False); return
-    if not confirm(f"Set power save: start={start}, duration={dur}?"): return
-    r=d.request("dish_set_config",{"dish_config":{
-        "power_save_start_minutes":start,"power_save_duration_minutes":dur,
-        "power_save_mode":"POWER_SAVE_MODE_ENABLED" if dur>0 else "POWER_SAVE_MODE_DISABLED"}})
-    display_raw(r,"SET POWER SAVE RESULT")
-
-def config_level(d):
-    print(f"\n  {C.BOLD}Level Dish Mode:{C.RST}")
-    print(f"    {C.CYN}1{C.RST} = TILT LIKE BRACKET\n    {C.CYN}2{C.RST} = FORCE LEVEL")
-    ch=input("\n  Select [1-2]: ").strip()
-    modes={"1":"LEVEL_DISH_MODE_TILT_LIKE_BRACKET","2":"LEVEL_DISH_MODE_FORCE_LEVEL"}
-    m=modes.get(ch)
-    if not m: ps("Invalid.",ok=False); return
-    if not confirm(f"Set → {m}?"): return
-    r=d.request("dish_set_config",{"dish_config":{"level_dish_mode":m}})
-    display_raw(r,"SET LEVEL DISH RESULT")
-
-def config_wifi(d):
-    print(f"\n  {C.BOLD}Set WiFi Network{C.RST}")
-    ssid=input("  SSID: ").strip()
-    pw=getpass.getpass("  Password: ").strip()
-    if not ssid: ps("SSID empty.",ok=False); return
-    if len(pw)<8: ps("Password must be ≥8 chars.",ok=False); return
-    print(f"\n  {C.BOLD}Band:{C.RST}\n    {C.CYN}1{C.RST}=2.4GHz  {C.CYN}2{C.RST}=5GHz  {C.CYN}3{C.RST}=Both")
-    bc=input("  Select [1-3, default=3]: ").strip() or "3"
-    if not confirm(f"Update WiFi → SSID='{ssid}'?"): return
-    net={"network_name":ssid,"auth":"WPA2","password":pw}
-    if bc=="1": net["band"]="WIFI_BAND_2_4GHZ"
-    elif bc=="2": net["band"]="WIFI_BAND_5GHZ"
-    r=d.request("wifi_set_config",{"wifi_config":{"networks":[net]}})
-    display_raw(r,"SET WIFI RESULT")
 
 # ── Actions ───────────────────────────────────────────────────
 
@@ -764,10 +1060,6 @@ def act_reboot(d):
     if not confirm("Reboot the dish? Connectivity will drop."): return
     r=d.request("reboot"); ps("Reboot sent.",ok=True)
     if r: display_raw(r,"REBOOT")  # Note: 'reboot' has no underscore in the API
-
-def act_reboot_wifi(d):
-    ps("WiFi reboot is not available via API on this Starlink model.",ok=False)
-    print(f"  {C.DIM}Reboot the entire system using option [11] instead.{C.RST}")
 
 # ── Advanced ──────────────────────────────────────────────────
 
@@ -801,25 +1093,43 @@ def list_fields(d):
     else:
         print(f"  {C.BCYN}│{C.RST}  {C.BOLD}Common request keys:{C.RST}")
         for k in ["get_device_info","get_status","dish_get_obstruction_map",
-                   "dish_get_config","get_location","get_diagnostics","reboot","dish_stow",
+                   "dish_get_config","get_location","get_diagnostics","get_history","reboot",
                    "transceiver_get_status","transceiver_get_telemetry"]:
             print(f"  {C.BCYN}│{C.RST}    {C.CYN}{k}{C.RST}")
     sec_end()
 
-def export_all(d):
+def export_all(dish, router):
     print(f"\n  {C.BYEL}⚠  Export contains sensitive data:{C.RST}")
     print(f"  {C.DIM}   • GPS coordinates (latitude, longitude, altitude){C.RST}")
-    print(f"  {C.DIM}   • Device identifiers and configuration{C.RST}")
+    print(f"  {C.DIM}   • Device identifiers, router config, WiFi SSIDs{C.RST}")
+    print(f"  {C.DIM}   • Passwords are redacted before writing.{C.RST}")
     if not confirm("Export all data to file?"): return
 
     print(f"\n  {C.DIM}Collecting all data …{C.RST}")
-    all_data={}
-    for k in ["get_device_info","get_status","dish_get_obstruction_map",
-              "dish_get_config","get_location","get_diagnostics",
-              "transceiver_get_status","transceiver_get_telemetry"]:
-        print(f"  {C.DIM}  → {k}{C.RST}",end=" ",flush=True)
-        r=d.request(k); all_data[k]=r
+    all_data={"dish": {}, "router": {}}
+    dish_keys=["get_device_info","get_status","dish_get_obstruction_map",
+               "dish_get_config","get_location","get_diagnostics",
+               "get_history","transceiver_get_status","transceiver_get_telemetry"]
+    for k in dish_keys:
+        print(f"  {C.DIM}  dish → {k}{C.RST}",end=" ",flush=True)
+        r=dish.request(k) if dish._connected else None
+        all_data["dish"][k]=r
         print(f"{C.BGRN}✔{C.RST}" if r else f"{C.YEL}–{C.RST}")
+    router_keys=["get_status","get_device_info","get_diagnostics","get_history",
+                 "wifi_get_clients","wifi_get_config","wifi_self_test",
+                 "get_network_interfaces","get_radio_stats"]
+    if router and router._connected:
+        for k in router_keys:
+            print(f"  {C.DIM}  router → {k}{C.RST}",end=" ",flush=True)
+            r=router.request(k)
+            all_data["router"][k]=r
+            print(f"{C.BGRN}✔{C.RST}" if r else f"{C.YEL}–{C.RST}")
+    else:
+        print(f"  {C.DIM}  router → not connected, skipping{C.RST}")
+
+    # Redact any PSK / credential fields before writing to disk.
+    all_data=scrub_sensitive_data(all_data)
+
     ts=datetime.now().strftime("%Y%m%d_%H%M%S")
     home=os.path.expanduser("~")
     if not os.path.isdir(home):
@@ -880,29 +1190,33 @@ def main():
     enter_alt()
     try:
         dish=DishClient(DISH_ADDR)
+        router=DishClient(ROUTER_ADDR)
         clear(); banner()
-        print(f"  {C.DIM}Connecting to {DISH_ADDR} …{C.RST}")
+        print(f"  {C.DIM}Connecting to dish at {DISH_ADDR} …{C.RST}")
         ok,msg=dish.connect()
-        if ok: ps(f"Connected — {len(dish._services)} service(s) discovered",ok=True)
-        else:
-            ps(f"Failed: {msg}",ok=False)
-            print(f"\n  {C.YEL}Menu still works. Use [19] to reconnect later.{C.RST}")
+        if ok: ps(f"Dish connected — {len(dish._services)} service(s) discovered",ok=True)
+        else: ps(f"Dish failed: {msg}",ok=False)
+        print(f"  {C.DIM}Connecting to router at {ROUTER_ADDR} …{C.RST}")
+        rok,rmsg=router.connect()
+        if rok: ps(f"Router connected — {len(router._services)} service(s) discovered",ok=True)
+        else: ps(f"Router failed: {rmsg}",ok=False)
+        if not ok or not rok:
+            print(f"\n  {C.YEL}Menu still works. Use [21] to reconnect later.{C.RST}")
         pause()
 
         while True:
-            main_menu(dish._connected)
+            main_menu(dish._connected, router._connected)
             ch=input(f"  {C.BCYN}▸{C.RST} Select: ").strip().lower()
             if ch=="q":
-                dish.close(); break
+                dish.close(); router.close(); break
 
-            # Option 18 needs to be outside capture_lines() (it has its own loop)
-            if ch=="18":
+            # Options that run outside capture_lines (need their own TTY loops)
+            if ch=="20":
                 live_monitor(dish)
-                show_cursor()  # ensure cursor is shown after live_monitor
+                show_cursor()
                 continue
 
-            # Option 16 needs special handling for input(), but output shown via render_screen()
-            if ch=="16":
+            if ch=="19":
                 try:
                     raw=input("\n  JSON> ").strip()
                 except KeyboardInterrupt:
@@ -922,34 +1236,74 @@ def main():
                         print(f"  {C.BRED}Bad JSON: {e}{C.RST}")
                 continue
 
-            # Options 7-12 need special handling for input() — they must run outside capture_lines()
-            if ch in ["7","8","9","10","11","12"]:
-                if ch=="7": config_snow_melt(dish)
-                elif ch=="8": config_power_save(dish)
-                elif ch=="9": config_level(dish)
-                elif ch=="10": config_wifi(dish)
-                elif ch=="11": act_reboot(dish)
-                elif ch=="12": act_reboot_wifi(dish)
+            if ch in ("14","16"):
+                # Actions that prompt for confirmation or print progress inline
+                if ch=="14": act_reboot(dish)
+                elif ch=="16": export_all(dish, router)
+                pause()
+                continue
+
+            if ch=="21":
+                print(f"  {C.DIM}Reconnecting …{C.RST}")
+                dish.close(); router.close()
+                dish=DishClient(DISH_ADDR); dok,dmsg=dish.connect()
+                router=DishClient(ROUTER_ADDR); rok,rmsg=router.connect()
+                ps(f"Dish: {'OK' if dok else dmsg}", ok=dok)
+                ps(f"Router: {'OK' if rok else rmsg}", ok=rok)
                 pause()
                 continue
 
             with capture_lines() as buf:
-                if   ch=="1":  r=dish.request("getDeviceInfo") or dish.request("getStatus"); display_device_info(r or {})
-                elif ch=="2":  display_status(dish.request("getStatus") or {})
-                elif ch=="3":  display_obstruction_map(dish.request("dishGetObstructionMap") or {})
+                if   ch=="1":
+                    r=dish.request("getDeviceInfo") or dish.request("getStatus")
+                    display_device_info(r or {})
+                elif ch=="2":
+                    status=dish.request("getStatus") or {}
+                    diag=dish.request("getDiagnostics") or {}
+                    display_status(status, diag=diag)
+                elif ch=="3":
+                    display_location(dish.request("getLocation") or {})
                 elif ch=="4":
-                    r=dish.request("getLocation") or {}
-                    display_location(r)
-                elif ch=="5":  display_generic(dish.request("getDiagnostics") or {},"DIAGNOSTICS")
-                elif ch=="6":  display_generic(dish.request("dishGetConfig") or {},"DISH CONFIG")
-                elif ch=="13": ping_test()
-                elif ch=="14": list_services(dish)
-                elif ch=="15": list_fields(dish)
-                elif ch=="17": export_all(dish)
-                elif ch=="19":
-                    print(f"  {C.DIM}Reconnecting …{C.RST}"); dish.close()
-                    dish=DishClient(DISH_ADDR); ok,msg=dish.connect()
-                    ps("Reconnected." if ok else f"Failed: {msg}",ok=ok)
+                    display_obstruction_map(dish.request("dishGetObstructionMap") or {})
+                elif ch=="5":
+                    display_history(dish.request("getHistory") or {})
+                elif ch=="6":
+                    display_generic(dish.request("dishGetConfig") or {}, "DISH CONFIG")
+                elif ch=="7":
+                    display_generic(dish.request("getDiagnostics") or {}, "DIAGNOSTICS")
+                elif ch=="8":
+                    if not router._connected:
+                        print(f"  {C.BRED}Router not connected. Use [21] to reconnect.{C.RST}")
+                    else:
+                        display_router_status(router.request("get_status") or {})
+                elif ch=="9":
+                    if not router._connected:
+                        print(f"  {C.BRED}Router not connected. Use [21] to reconnect.{C.RST}")
+                    else:
+                        display_router_clients(router.request("wifi_get_clients") or {})
+                elif ch=="10":
+                    if not router._connected:
+                        print(f"  {C.BRED}Router not connected. Use [21] to reconnect.{C.RST}")
+                    else:
+                        display_router_networks(router.request("wifi_get_config") or {})
+                elif ch=="11":
+                    if not router._connected:
+                        print(f"  {C.BRED}Router not connected. Use [21] to reconnect.{C.RST}")
+                    else:
+                        display_router_radios(router.request("get_radio_stats") or {})
+                elif ch=="12":
+                    if not router._connected:
+                        print(f"  {C.BRED}Router not connected. Use [21] to reconnect.{C.RST}")
+                    else:
+                        display_router_selftest(router.request("wifi_self_test") or {})
+                elif ch=="13":
+                    if not router._connected:
+                        print(f"  {C.BRED}Router not connected. Use [21] to reconnect.{C.RST}")
+                    else:
+                        display_router_interfaces(router.request("get_network_interfaces") or {})
+                elif ch=="15": ping_test()
+                elif ch=="17": list_services(dish)
+                elif ch=="18": list_fields(dish)
                 else: print(f"  {C.BRED}Unknown: {ch}{C.RST}")
             render_screen(buf.getvalue().splitlines())
 
