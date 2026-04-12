@@ -9,7 +9,7 @@ Run:
 """
 
 import os, sys, json, io, contextlib, argparse, importlib.util, subprocess, venv, shutil, threading, mimetypes
-import base64, hashlib, datetime, time
+import base64, hashlib, hmac, datetime, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -120,6 +120,8 @@ class DishProxy:
             if key not in DishClient.PERMITTED_KEYS:
                 return None, f"request key '{key}' not permitted"
             client = self.client
+        if not _GRPC_SEMAPHORE.acquire(timeout=5):
+            return None, "server busy"
         try:
             path, req_tn, resp_tn = client._find_handle()
             rc = client._get_msg_class(req_tn)
@@ -142,6 +144,8 @@ class DishProxy:
             return None, f"{code}: {(e.details() or '').strip()}"
         except Exception as e:
             return None, str(e)
+        finally:
+            _GRPC_SEMAPHORE.release()
 
     def services(self):
         with self.lock:
@@ -152,8 +156,39 @@ class DishProxy:
             return self.client.list_request_fields()
 
 
+# Cap concurrent blocking gRPC calls so a LAN attacker can't OOM the server
+# by flooding heavy endpoints (history / obstruction map return up to 50 MB).
+_GRPC_SEMAPHORE = threading.BoundedSemaphore(8)
+
 DISH_PROXY = DishProxy(DISH_ADDR)
 ROUTER_PROXY = DishProxy(ROUTER_ADDR)
+
+
+# Applied to every response so browsers refuse to frame the UI and don't
+# sniff content types. CSP blocks inline scripts and cross-origin loads.
+_SECURITY_HEADERS = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Referrer-Policy", "no-referrer"),
+    ("Cross-Origin-Opener-Policy", "same-origin"),
+    ("Cross-Origin-Resource-Policy", "same-origin"),
+    (
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self'; "
+        "script-src 'self'; "
+        "connect-src 'self'; "
+        "base-uri 'none'; "
+        "form-action 'none'; "
+        "frame-ancestors 'none'",
+    ),
+)
+
+
+def _apply_security_headers(handler):
+    for name, value in _SECURITY_HEADERS:
+        handler.send_header(name, value)
 
 
 def _json_response(handler, code, payload):
@@ -162,6 +197,7 @@ def _json_response(handler, code, payload):
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.send_header("Cache-Control", "no-store")
+    _apply_security_headers(handler)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -214,6 +250,9 @@ def _vault_write(data):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, sort_keys=True)
+        # Normalize the mode on the temp file before the atomic replace so any
+        # umask weirdness can't leave the destination world-readable.
+        os.chmod(tmp, 0o600)
     except Exception:
         try:
             os.unlink(tmp)
@@ -221,10 +260,6 @@ def _vault_write(data):
             pass
         raise
     os.replace(tmp, VAULT_PATH)
-    try:
-        os.chmod(VAULT_PATH, 0o600)
-    except OSError:
-        pass
 
 
 def _derive_key(password, salt):
@@ -254,7 +289,9 @@ def _vault_verify(key, vault):
     iv = _b64d(check.get("iv_b64", ""))
     ct = _b64d(check.get("ct_b64", ""))
     plain = _aes_decrypt(key, iv, ct)
-    return plain == VAULT_CHECK_PLAINTEXT
+    if plain is None:
+        return False
+    return hmac.compare_digest(plain, VAULT_CHECK_PLAINTEXT)
 
 
 def _vault_init(password):
@@ -566,8 +603,10 @@ def _api_get(path):
             r = subprocess.run([ping_bin, "-c", "5", "-i", "0.3", "192.168.100.1"],
                                capture_output=True, text=True, timeout=15)
             return 200, {"output": r.stdout, "stderr": r.stderr, "returncode": r.returncode}
-        except Exception as e:
-            return 500, {"error": str(e)}
+        except subprocess.TimeoutExpired:
+            return 504, {"error": "ping timed out"}
+        except Exception:
+            return 500, {"error": "ping failed"}
 
     return 404, {"error": "not found"}
 
@@ -672,6 +711,23 @@ def _api_post(path, body, client_ip=""):
     return 404, {"error": "not found"}
 
 
+def _build_allowed_hosts(bind_host, port):
+    """Return the Host header values the server will honour, or None to skip
+    the check. On the default loopback bind we pin Host to the loopback names
+    so a DNS-rebinding page (evil.com → 127.0.0.1 in the victim's resolver)
+    can't reach us. When the user explicitly binds elsewhere they're opting
+    into LAN exposure, and we can't enumerate every valid hostname, so we
+    skip the check — the Origin check in do_POST still blocks CSRF."""
+    if bind_host not in ("127.0.0.1", "localhost", "::1"):
+        return None
+    base = {"127.0.0.1", "localhost", "[::1]"}
+    hosts = set()
+    for h in base:
+        hosts.add(h)
+        hosts.add(f"{h}:{port}")
+    return frozenset(hosts)
+
+
 def _safe_static_path(url_path):
     if url_path in ("", "/", "/index.html"):
         return os.path.join(STATIC_DIR, "index.html")
@@ -692,6 +748,32 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         sys.stderr.write(f"  {self.address_string()} - {fmt % args}\n")
+
+    def _check_host(self):
+        """Reject requests whose Host header is not one of the bound names.
+        Protects against DNS rebinding, where evil.com resolves to 127.0.0.1
+        in the victim's browser and sends Host: evil.com to this server."""
+        allowed = getattr(self.server, "allowed_hosts", None)
+        if not allowed:
+            return True
+        host = (self.headers.get("Host") or "").lower()
+        return host in allowed
+
+    def _check_origin(self):
+        """Require that POST requests come from the same origin as the page
+        that loaded the dashboard. Browsers always send Origin on cross-origin
+        fetch(), so a missing Origin *and* missing Referer means the caller is
+        not a browser tab at all and we reject on principle."""
+        host = (self.headers.get("Host") or "").lower()
+        if not host:
+            return False
+        origin = (self.headers.get("Origin") or "").lower()
+        if origin:
+            return origin == f"http://{host}"
+        referer = (self.headers.get("Referer") or "").lower()
+        if referer:
+            return referer.startswith(f"http://{host}/") or referer == f"http://{host}"
+        return False
 
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -746,6 +828,9 @@ class Handler(BaseHTTPRequestHandler):
         _json_response(self, 200, {"svg_b64": _b64e(buf.getvalue())})
 
     def do_GET(self):
+        if not self._check_host():
+            self.send_error(421, "Misdirected request")
+            return
         url = urlparse(self.path)
         path = url.path
         if path.startswith("/api/"):
@@ -768,10 +853,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache")
+        _apply_security_headers(self)
         self.end_headers()
         self.wfile.write(data)
 
     def do_POST(self):
+        if not self._check_host():
+            _json_response(self, 421, {"error": "misdirected request"})
+            return
+        if not self._check_origin():
+            _json_response(self, 403, {"error": "cross-origin request denied"})
+            return
         url = urlparse(self.path)
         if not url.path.startswith("/api/"):
             self.send_error(404, "Not found")
@@ -809,6 +901,7 @@ def main():
         print(f"  (Router tab will be empty; use the Reconnect button.)")
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    srv.allowed_hosts = _build_allowed_hosts(args.host, args.port)
     url = f"http://{args.host}:{args.port}/"
     print(f"\n  Serving Starlink Web UI on {url}")
     print(f"  Ctrl+C to stop\n")

@@ -128,7 +128,6 @@
     for (const [k, v] of Object.entries(attrs)) {
       if (k === "class") node.className = v;
       else if (k === "text") node.textContent = v;
-      else if (k === "html") node.innerHTML = v;
       else if (k.startsWith("data-")) node.setAttribute(k, v);
       else node[k] = v;
     }

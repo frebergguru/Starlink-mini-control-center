@@ -127,7 +127,7 @@
     "obs.partial": "partial",
     "obs.blocked": "blocked",
 
-    "config.readonly_html": "Read-only — the LAN gRPC endpoint rejects writes with <code>PERMISSION_DENIED</code>. Change settings from the Starlink mobile app.",
+    "config.readonly": "Read-only — the LAN gRPC endpoint rejects writes with PERMISSION_DENIED. Change settings from the Starlink mobile app.",
     "config.snow_loading": "Loading current setting…",
     "config.snow_unknown_desc": "Current snow-melt behaviour is not reported by the dish.",
     "config.snow_not_set": "Not set",
@@ -479,7 +479,7 @@
     "obs.partial": "delvis",
     "obs.blocked": "blokkert",
 
-    "config.readonly_html": "Skrivebeskyttet — LAN gRPC-endepunktet avviser skriving med <code>PERMISSION_DENIED</code>. Endre innstillinger fra Starlink-mobilappen.",
+    "config.readonly": "Skrivebeskyttet — LAN gRPC-endepunktet avviser skriving med PERMISSION_DENIED. Endre innstillinger fra Starlink-mobilappen.",
     "config.snow_loading": "Laster nåværende innstilling…",
     "config.snow_unknown_desc": "Gjeldende snøsmelteatferd rapporteres ikke av antennen.",
     "config.snow_not_set": "Ikke satt",
@@ -773,9 +773,6 @@
     root = root || document;
     root.querySelectorAll("[data-i18n]").forEach((n) => {
       n.textContent = t(n.dataset.i18n);
-    });
-    root.querySelectorAll("[data-i18n-html]").forEach((n) => {
-      n.innerHTML = t(n.dataset.i18nHtml);
     });
     root.querySelectorAll("[data-i18n-attr]").forEach((n) => {
       const spec = n.dataset.i18nAttr || "";
