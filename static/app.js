@@ -44,24 +44,28 @@
       .trim()
       .replace(/\b\w/g, (c) => c.toUpperCase());
 
+  const nfix = (n, digits) =>
+    i18n.fmtNumber(n, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
   const fmtBps = (b) => {
     if (isMissing(b)) return "—";
     let n = Number(b);
     if (!isFinite(n)) return "—";
-    const units = ["bps", "Kbps", "Mbps", "Gbps", "Tbps"];
+    const keys = ["units.bps", "units.kbps", "units.mbps", "units.gbps", "units.tbps"];
     let i = 0;
-    while (Math.abs(n) >= 1000 && i < units.length - 1) {
+    while (Math.abs(n) >= 1000 && i < keys.length - 1) {
       n /= 1000;
       i++;
     }
-    return `${n.toFixed(1)} ${units[i]}`;
+    return `${nfix(n, 1)} ${i18n.t(keys[i])}`;
   };
 
   const fmtPct = (v) => {
     if (isMissing(v)) return "—";
     const n = Number(v);
     if (!isFinite(n)) return "—";
-    return n <= 1 ? `${(n * 100).toFixed(1)}%` : `${n.toFixed(1)}%`;
+    const scaled = n <= 1 ? n * 100 : n;
+    return `${nfix(scaled, 1)}%`;
   };
 
   const fmtUptime = (s) => {
@@ -86,27 +90,27 @@
     if (isMissing(v)) return "—";
     const n = Number(v);
     if (!isFinite(n)) return "—";
-    return `${n.toFixed(1)} ms`;
+    return `${nfix(n, 1)} ${i18n.t("units.ms")}`;
   };
 
   const fmtDeg = (v) => {
     if (isMissing(v)) return "—";
     const n = Number(v);
     if (!isFinite(n)) return "—";
-    return `${n.toFixed(2)}°`;
+    return `${nfix(n, 2)}°`;
   };
 
   const fmtSnr = (v) => {
     if (isMissing(v)) return "—";
     const n = Number(v);
     if (!isFinite(n)) return "—";
-    return `${n.toFixed(1)} dB`;
+    return `${nfix(n, 1)} ${i18n.t("units.db")}`;
   };
 
   const fmtValue = (v) => {
     if (isMissing(v)) return "—";
-    if (typeof v === "boolean") return v ? "Yes" : "No";
-    if (typeof v === "number") return Number.isInteger(v) ? v.toString() : v.toFixed(2);
+    if (typeof v === "boolean") return v ? i18n.t("bool.yes") : i18n.t("bool.no");
+    if (typeof v === "number") return Number.isInteger(v) ? i18n.fmtNumber(v) : nfix(v, 2);
     return String(v);
   };
 
@@ -231,6 +235,7 @@
     const body = r.body || {};
     setConn("conn-dot", "conn-addr", body.dish);
     setConn("router-conn-dot", "router-conn-addr", body.router);
+    currentState = body;
     return body;
   };
 
@@ -259,7 +264,7 @@
 
     $("#m-lat").textContent = fmtMs(lat);
     $("#m-drop").textContent = fmtPct(drop);
-    $("#m-snr").textContent = typeof snr === "boolean" ? (snr ? "Above floor" : "Below floor") : fmtSnr(snr);
+    $("#m-snr").textContent = typeof snr === "boolean" ? (snr ? i18n.t("snr.above_floor") : i18n.t("snr.below_floor")) : fmtSnr(snr);
     $("#m-uptime").textContent = fmtUptime(up);
 
     // Status pill
@@ -274,12 +279,12 @@
     const updateState = pick(s, "software_update_state", "softwareUpdateState");
     const eth = pick(s, "eth_speed_mbps", "ethSpeedMbps");
     renderKV($("#kv-status"), [
-      ["Disablement", disablement, disablement === "OKAY" ? "good" : "warn"],
-      ["Mobility class", mobility],
-      ["Uptime", fmtUptime(up)],
-      ["Class of service", classOfService],
-      ["Software update", updateState],
-      ["Ethernet speed", eth ? `${eth} Mbps` : null],
+      [i18n.t("kv.disablement"), disablement, disablement === "OKAY" ? "good" : "warn"],
+      [i18n.t("kv.mobility_class"), mobility],
+      [i18n.t("kv.uptime"), fmtUptime(up)],
+      [i18n.t("kv.class_of_service"), classOfService],
+      [i18n.t("kv.software_update"), updateState],
+      [i18n.t("kv.ethernet_speed"), eth ? i18n.t("units.eth_speed", { n: eth }) : null],
     ]);
 
     // Alerts
@@ -294,16 +299,16 @@
         alertsEl.appendChild(el("span", { class: "alert-chip", text: titleCase(a) }));
       }
     } else {
-      alertsEl.appendChild(el("span", { class: "alert-none", text: "No active alerts" }));
+      alertsEl.appendChild(el("span", { class: "alert-none", text: i18n.t("alerts.none") }));
     }
 
     // Signal & ready states
     const rs = pick(s, "ready_states", "readyStates") || {};
     const signalEntries = [
-      ["SNR above floor", typeof snr === "boolean" ? (snr ? "Yes" : "No") : fmtSnr(snr),
+      [i18n.t("kv.snr_above_floor"), typeof snr === "boolean" ? (snr ? i18n.t("bool.yes") : i18n.t("bool.no")) : fmtSnr(snr),
         typeof snr === "boolean" ? (snr ? "good" : "warn") : null],
-      ["Class of service", classOfService],
-      ["Software update", updateState],
+      [i18n.t("kv.class_of_service"), classOfService],
+      [i18n.t("kv.software_update"), updateState],
     ];
     for (const [k, v] of Object.entries(rs)) {
       signalEntries.push([titleCase(k), v, v === true ? "good" : v === false ? "bad" : null]);
@@ -316,11 +321,11 @@
     const az = pick(s, "boresight_azimuth_deg", "boresightAzimuthDeg");
     const elev = pick(s, "boresight_elevation_deg", "boresightElevationDeg");
     const fallbackEntries = [
-      ["GPS valid", gps.gps_valid, gps.gps_valid === true ? "good" : gps.gps_valid === false ? "bad" : null],
-      ["Satellites", gps.gps_sats],
-      ["Tilt", fmtDeg(tilt)],
-      ["Azimuth", fmtDeg(az)],
-      ["Elevation", fmtDeg(elev)],
+      [i18n.t("kv.gps_valid"), gps.gps_valid, gps.gps_valid === true ? "good" : gps.gps_valid === false ? "bad" : null],
+      [i18n.t("kv.satellites"), gps.gps_sats],
+      [i18n.t("kv.tilt"), fmtDeg(tilt)],
+      [i18n.t("kv.azimuth"), fmtDeg(az)],
+      [i18n.t("kv.elevation"), fmtDeg(elev)],
     ];
     if (!lastLocation) renderKV($("#kv-location"), fallbackEntries);
 
@@ -343,12 +348,12 @@
     // Device info
     const di = pick(s, "device_info", "deviceInfo") || {};
     const deviceEntries = [
-      ["ID", di.id],
-      ["Hardware", pick(di, "hardware_version", "hardwareVersion")],
-      ["Software", pick(di, "software_version", "softwareVersion")],
-      ["Country", pick(di, "country_code", "countryCode")],
-      ["Boot count", pick(di, "bootcount")],
-      ["Generation", pick(di, "generation_number", "generationNumber")],
+      [i18n.t("kv.id"), di.id],
+      [i18n.t("kv.hardware"), pick(di, "hardware_version", "hardwareVersion")],
+      [i18n.t("kv.software"), pick(di, "software_version", "softwareVersion")],
+      [i18n.t("kv.country"), pick(di, "country_code", "countryCode")],
+      [i18n.t("kv.boot_count"), pick(di, "bootcount")],
+      [i18n.t("kv.generation"), pick(di, "generation_number", "generationNumber")],
     ];
     renderKV($("#kv-device"), deviceEntries);
   };
@@ -358,15 +363,20 @@
   // `renderConnectedRouters(s)` call in renderStatus(), and the matching
   // markers in index.html + style.css.
 
-  const timeAgoFromNs = (ns) => {
+  const diffSecsFromNs = (ns) => {
     const secs = Number(ns) / 1e9;
-    if (!isFinite(secs) || secs < 1577836800) return "";
-    const diff = (Date.now() - secs * 1000) / 1000;
-    if (diff < 0 || diff < 2) return "now";
-    if (diff < 60) return `${Math.floor(diff)}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
+    if (!isFinite(secs) || secs < 1577836800) return null;
+    return (Date.now() - secs * 1000) / 1000;
+  };
+
+  const timeAgoFromNs = (ns) => {
+    const diff = diffSecsFromNs(ns);
+    if (diff == null) return "";
+    if (diff < 2) return i18n.t("time.now");
+    if (diff < 60) return i18n.t("time.s_ago", { n: Math.floor(diff) });
+    if (diff < 3600) return i18n.t("time.m_ago", { n: Math.floor(diff / 60) });
+    if (diff < 86400) return i18n.t("time.h_ago", { n: Math.floor(diff / 3600) });
+    return i18n.t("time.d_ago", { n: Math.floor(diff / 86400) });
   };
 
   const initialsFor = (name) => {
@@ -395,10 +405,10 @@
     const connectedIds = pick(statusDict, "connected_routers") || [];
     const downstream = pick(statusDict, "downstream_routers") || {};
     const ids = Array.isArray(connectedIds) ? connectedIds : [];
-    count.textContent = ids.length ? `${ids.length} connected` : "";
+    count.textContent = ids.length ? i18n.tp("router.connected", ids.length) : "";
 
     if (!ids.length) {
-      renderEmpty(list, "No routers detected", "The dish isn't reporting any downstream routers on Ethernet.");
+      renderEmpty(list, i18n.t("empty.routers.title"), i18n.t("empty.routers.hint"));
       return;
     }
 
@@ -408,19 +418,20 @@
       const role = info.role || "UNKNOWN";
       const lastSeen = info.last_seen || info.lastSeen;
       const ago = lastSeen ? timeAgoFromNs(lastSeen) : "";
-      const stale = ago && !["now", "0s ago"].includes(ago) && /[dh]/.test(ago);
+      const diffSecs = lastSeen ? diffSecsFromNs(lastSeen) : null;
+      const stale = diffSecs != null && diffSecs >= 300;
       const shortId = id.replace(/^Router-/, "").slice(-12);
       const row = el("div", { class: "device-row" }, [
         el("div", { class: "device-row-avatar", text: "RT" }),
         el("div", { class: "device-row-body" }, [
-          el("div", { class: "device-row-name", text: role === "CONTROLLER" ? "Controller Router" : role.replace(/_/g, " ") }),
+          el("div", { class: "device-row-name", text: role === "CONTROLLER" ? i18n.t("router.controller") : role.replace(/_/g, " ") }),
           el("div", { class: "device-row-sub", text: shortId }),
         ]),
         el("div", { class: "device-row-meta" }, [
           el("span", {
             class: "device-row-status",
             "data-state": stale ? "stale" : "live",
-            text: stale ? "stale" : "live",
+            text: stale ? i18n.t("router.stale") : i18n.t("router.live"),
           }),
           el("span", { text: ago || "—" }),
         ]),
@@ -467,18 +478,18 @@
     const alerts = s.alerts || {};
     const active = Object.entries(alerts).filter(([, v]) => v).map(([k]) => k);
     if (active.length) {
-      pill.textContent = `${active.length} alert${active.length > 1 ? "s" : ""}`;
+      pill.textContent = i18n.tp("pill.alert", active.length);
       pill.dataset.state = "warn";
     } else {
-      pill.textContent = "HEALTHY";
+      pill.textContent = i18n.t("pill.healthy");
       pill.dataset.state = "OKAY";
     }
 
     renderKV($("#kv-router-hero"), [
-      ["Uptime", fmtUptime(up)],
-      ["Ping to dish", s.dish_ping_latency_ms != null ? `${Number(s.dish_ping_latency_ms).toFixed(1)} ms` : null],
-      ["Ping to PoP", s.pop_ping_latency_ms != null ? `${Number(s.pop_ping_latency_ms).toFixed(1)} ms` : null],
-      ["Ping (WAN)", s.ping_latency_ms != null ? `${Number(s.ping_latency_ms).toFixed(1)} ms` : null],
+      [i18n.t("kv.uptime"), fmtUptime(up)],
+      [i18n.t("kv.ping_to_dish"), s.dish_ping_latency_ms != null ? fmtMs(s.dish_ping_latency_ms) : null],
+      [i18n.t("kv.ping_to_pop"), s.pop_ping_latency_ms != null ? fmtMs(s.pop_ping_latency_ms) : null],
+      [i18n.t("kv.ping_wan"), s.ping_latency_ms != null ? fmtMs(s.ping_latency_ms) : null],
     ]);
 
     const leaseCount = (s.dhcp_servers || []).reduce(
@@ -486,16 +497,16 @@
       0
     );
     renderKV($("#kv-router-status"), [
-      ["Router ID", di.id],
-      ["Hardware", di.hardware_version],
-      ["Software", di.software_version],
-      ["Country", di.country_code],
-      ["Boot count", di.bootcount],
-      ["Dish cohoused", di.dish_cohoused],
-      ["IPv4 WAN", s.ipv4_wan_address],
-      ["IPv6 WAN", Array.isArray(s.ipv6_wan_addresses) ? s.ipv6_wan_addresses[0] : null],
-      ["DHCP leases", leaseCount || null],
-      ["Active alerts", active.length ? active.join(", ") : "None",
+      [i18n.t("kv.router_id"), di.id],
+      [i18n.t("kv.hardware"), di.hardware_version],
+      [i18n.t("kv.software"), di.software_version],
+      [i18n.t("kv.country"), di.country_code],
+      [i18n.t("kv.boot_count"), di.bootcount],
+      [i18n.t("kv.dish_cohoused"), di.dish_cohoused],
+      [i18n.t("kv.ipv4_wan"), s.ipv4_wan_address],
+      [i18n.t("kv.ipv6_wan"), Array.isArray(s.ipv6_wan_addresses) ? s.ipv6_wan_addresses[0] : null],
+      [i18n.t("kv.dhcp_leases"), leaseCount || null],
+      [i18n.t("kv.active_alerts"), active.length ? active.join(", ") : i18n.t("alerts.no_alerts"),
         active.length ? "warn" : "good"],
     ]);
   };
@@ -506,11 +517,11 @@
     const list = $("#router-clients-list");
     const count = $("#router-clients-count");
 
-    count.textContent = clients.length ? `${clients.length} connected` : "";
+    count.textContent = clients.length ? i18n.tp("clients.connected", clients.length) : "";
     list.replaceChildren();
 
     if (!clients.length) {
-      renderEmpty(list, "No clients connected", "No devices are currently associated with the router.");
+      renderEmpty(list, i18n.t("empty.clients.title"), i18n.t("empty.clients.hint"));
       return;
     }
 
@@ -538,12 +549,12 @@
 
       const subparts = [mac, ip].filter(Boolean).join(" · ");
       const metaLines = [];
-      if (rssi != null) metaLines.push(`${rssi.toFixed(0)} dBm`);
+      if (rssi != null) metaLines.push(`${i18n.fmtNumber(rssi, { maximumFractionDigits: 0 })} dBm`);
       if (band) metaLines.push(band);
-      if (txRate || rxRate) metaLines.push(`${rxRate || 0}↓ ${txRate || 0}↑ Mbps`);
+      if (txRate || rxRate) metaLines.push(`${rxRate || 0}↓ ${txRate || 0}↑ ${i18n.t("units.mbps")}`);
       if (down != null || up != null) metaLines.push(`${fmtMegabytes(down)} / ${fmtMegabytes(up)}`);
-      if (assoc) metaLines.push(`${fmtUptime(assoc)} assoc`);
-      if (snr != null) metaLines.push(`SNR ${snr.toFixed(0)}`);
+      if (assoc) metaLines.push(i18n.t("time.assoc", { dur: fmtUptime(assoc) }));
+      if (snr != null) metaLines.push(i18n.t("snr.short", { n: i18n.fmtNumber(snr, { maximumFractionDigits: 0 }) }));
 
       const isController = c.role === "CONTROLLER";
       const row = el("div", { class: "device-row" }, [
@@ -557,7 +568,7 @@
           { class: "device-row-meta" },
           metaLines.length
             ? metaLines.slice(0, 4).map((t) => el("span", { text: t }))
-            : [el("span", { class: "device-row-status", text: "online" })]
+            : [el("span", { class: "device-row-status", text: i18n.t("router.online") })]
         ),
       ]);
       list.appendChild(row);
@@ -573,25 +584,25 @@
     const container = $("#router-networks");
     const count = $("#router-wifi-count");
 
-    count.textContent = networks.length ? `${networks.length} network${networks.length > 1 ? "s" : ""}` : "";
+    count.textContent = networks.length ? i18n.tp("wifi.networks", networks.length) : "";
     container.replaceChildren();
 
     if (!networks.length) {
-      renderEmpty(container, "No WiFi networks configured", "");
+      renderEmpty(container, i18n.t("empty.wifi"), "");
       return;
     }
 
     for (const net of networks) {
       const bss = net.basic_service_sets || [];
-      const ssid = bss[0] && bss[0].ssid ? bss[0].ssid : "(hidden)";
+      const ssid = bss[0] && bss[0].ssid ? bss[0].ssid : i18n.t("wifi.hidden");
       const isGuest = Boolean(net.guest);
       const card = el("div", { class: `wifi-net${isGuest ? " wifi-net-guest" : ""}` });
 
       const head = el("div", { class: "wifi-net-head" }, [
         el("span", { class: "wifi-net-ssid", text: ssid }),
       ]);
-      if (isGuest) head.appendChild(el("span", { class: "wifi-net-tag", text: "Guest" }));
-      if (net.client_isolation) head.appendChild(el("span", { class: "wifi-net-tag", text: "Isolated" }));
+      if (isGuest) head.appendChild(el("span", { class: "wifi-net-tag", text: i18n.t("wifi.guest") }));
+      if (net.client_isolation) head.appendChild(el("span", { class: "wifi-net-tag", text: i18n.t("wifi.isolated") }));
       card.appendChild(head);
 
       const bands = el("div", { class: "wifi-net-bands" });
@@ -604,9 +615,9 @@
 
       const lines = [];
       if (net.ipv4) lines.push(`${net.ipv4}`);
-      if (net.domain) lines.push(`domain ${net.domain}`);
-      if (net.vlan) lines.push(`VLAN ${net.vlan}`);
-      if (net.dhcpv4_lease_duration_s) lines.push(`DHCP lease ${net.dhcpv4_lease_duration_s}s`);
+      if (net.domain) lines.push(i18n.t("wifi.domain", { v: net.domain }));
+      if (net.vlan) lines.push(i18n.t("wifi.vlan", { v: net.vlan }));
+      if (net.dhcpv4_lease_duration_s) lines.push(i18n.t("wifi.dhcp_lease", { v: net.dhcpv4_lease_duration_s }));
       card.appendChild(el("div", { class: "wifi-net-detail", text: lines.join(" · ") }));
 
       container.appendChild(card);
@@ -620,7 +631,7 @@
     list.replaceChildren();
 
     if (!radios.length) {
-      renderEmpty(list, "No radio data", "");
+      renderEmpty(list, i18n.t("empty.radio"), "");
       return;
     }
 
@@ -631,7 +642,7 @@
 
       const tempEl = el("span", {
         class: "radio-temp-value",
-        text: temp != null ? `${Number(temp).toFixed(0)}°C` : "—",
+        text: temp != null ? `${i18n.fmtNumber(temp, { maximumFractionDigits: 0 })}°C` : "—",
       });
       if (temp != null) {
         if (Number(temp) > 70) tempEl.dataset.hot = "true";
@@ -641,7 +652,7 @@
       row.appendChild(
         el("div", { class: "radio-row-head" }, [
           el("span", { class: "radio-band", text: shortBand(r.band) }),
-          el("div", { class: "radio-temp" }, [el("span", { text: "temp" }), tempEl]),
+          el("div", { class: "radio-temp" }, [el("span", { text: i18n.t("radio.temp") }), tempEl]),
         ])
       );
 
@@ -652,11 +663,11 @@
 
       const statsGrid = el("div", { class: "radio-stats-grid" });
       for (const [label, value] of [
-        ["RX", fmtBytes(rxBytes)],
-        ["TX", fmtBytes(txBytes)],
-        ["RX pkts", rxPkts || "—"],
-        ["TX pkts", txPkts || "—"],
-        ["Duty", duty != null ? `${duty}%` : "—"],
+        [i18n.t("radio.rx"), fmtBytes(rxBytes)],
+        [i18n.t("radio.tx"), fmtBytes(txBytes)],
+        [i18n.t("radio.rx_pkts"), rxPkts || "—"],
+        [i18n.t("radio.tx_pkts"), txPkts || "—"],
+        [i18n.t("radio.duty"), duty != null ? `${duty}%` : "—"],
       ]) {
         statsGrid.appendChild(
           el("div", { class: "radio-stat" }, [
@@ -708,7 +719,7 @@
     }
 
     if (!rows.length) {
-      renderEmpty(list, "No self-test results", "");
+      renderEmpty(list, i18n.t("empty.selftest"), "");
       return;
     }
 
@@ -716,7 +727,7 @@
       const row = el("div", { class: "selftest-row", "data-pass": String(r.pass) }, [
         el("div", { class: "selftest-icon", text: r.pass ? "✓" : "✗" }),
         el("div", { class: "selftest-name", text: r.name }),
-        el("div", { class: "selftest-status", text: r.pass ? "pass" : "fail" }),
+        el("div", { class: "selftest-status", text: r.pass ? i18n.t("selftest.pass") : i18n.t("selftest.fail") }),
       ]);
       if (!r.pass && r.reason) {
         row.appendChild(el("div", { class: "selftest-reason", text: r.reason }));
@@ -731,11 +742,11 @@
     const list = $("#router-interfaces");
     const count = $("#router-iface-count");
 
-    count.textContent = ifaces.length ? `${ifaces.filter((i) => i.up).length}/${ifaces.length} up` : "";
+    count.textContent = ifaces.length ? i18n.t("iface.up_count", { up: ifaces.filter((i) => i.up).length, total: ifaces.length }) : "";
     list.replaceChildren();
 
     if (!ifaces.length) {
-      renderEmpty(list, "No interfaces reported", "");
+      renderEmpty(list, i18n.t("empty.interfaces"), "");
       return;
     }
 
@@ -748,20 +759,20 @@
       ].join(" · ");
 
       const meta = [];
-      if (iface.mac_address) meta.push(el("span", {}, [el("strong", { text: "mac " }), document.createTextNode(iface.mac_address)]));
+      if (iface.mac_address) meta.push(el("span", {}, [el("strong", { text: i18n.t("iface.mac") }), document.createTextNode(iface.mac_address)]));
       if (iface.ethernet) {
         const eth = iface.ethernet;
         meta.push(
           el("span", {}, [
-            el("strong", { text: "link " }),
-            document.createTextNode(`${eth.speed_mbps || "?"} Mbps ${eth.duplex || ""}`),
+            el("strong", { text: i18n.t("iface.link") }),
+            document.createTextNode(`${eth.speed_mbps || "?"} ${i18n.t("units.mbps")} ${eth.duplex || ""}`),
           ])
         );
       }
       if (iface.wifi && iface.wifi.channel) {
         meta.push(
           el("span", {}, [
-            el("strong", { text: "ch " }),
+            el("strong", { text: i18n.t("iface.ch") }),
             document.createTextNode(String(iface.wifi.channel)),
           ])
         );
@@ -771,7 +782,7 @@
       if (rxB || txB) {
         meta.push(
           el("span", {}, [
-            el("strong", { text: "rx/tx " }),
+            el("strong", { text: i18n.t("iface.rx_tx") }),
             document.createTextNode(`${fmtBytes(rxB)} / ${fmtBytes(txB)}`),
           ])
         );
@@ -781,7 +792,7 @@
         el("div", { class: "iface-head" }, [
           el("span", { class: "iface-name", text: iface.name }),
           kind ? el("span", { class: "iface-kind", text: kind }) : null,
-          el("span", { class: "iface-state", text: up ? "up" : "down" }),
+          el("span", { class: "iface-state", text: up ? i18n.t("iface.up") : i18n.t("iface.down") }),
         ]),
         addrs ? el("div", { class: "iface-addr", text: addrs }) : null,
         meta.length ? el("div", { class: "iface-meta" }, meta) : null,
@@ -805,7 +816,7 @@
     if (radioR.ok && radioR.body.data) renderRouterRadios(radioR.body.data);
     if (stR.ok && stR.body.data) renderRouterSelfTest(stR.body.data);
     if (ifaceR.ok && ifaceR.body.data) renderRouterInterfaces(ifaceR.body.data);
-    $("#router-last-update").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    $("#router-last-update").textContent = i18n.t("updated", { time: i18n.fmtTime(new Date()) });
   };
 
   // ───── Alignment sky view ─────
@@ -991,7 +1002,7 @@
       line.setAttribute("stroke-opacity", "0");
       pill.textContent = "—";
       pill.dataset.state = "unknown";
-      renderKV($("#kv-alignment"), [["Alignment", null]]);
+      renderKV($("#kv-alignment"), [[i18n.t("kv.alignment"), null]]);
       return;
     }
 
@@ -1029,7 +1040,7 @@
     line.setAttribute("stroke-opacity", hasCurrent && hasTarget ? "0.6" : "0");
 
     if (state === "FILTER_CONVERGED") {
-      pill.textContent = "CONVERGED";
+      pill.textContent = i18n.t("align.converged");
       pill.dataset.state = "OKAY";
     } else if (state) {
       pill.textContent = state.replace(/^FILTER_/, "").replace(/_/g, " ");
@@ -1041,7 +1052,7 @@
 
     const deltaAz = hasCurrent && hasTarget ? az - dAz : null;
     const deltaEl = hasCurrent && hasTarget ? el - dEl : null;
-    const fmtDelta = (v) => (v >= 0 ? `+${v.toFixed(2)}°` : `${v.toFixed(2)}°`);
+    const fmtDelta = (v) => (v >= 0 ? `+${nfix(v, 2)}°` : `${nfix(v, 2)}°`);
     const deltaClass = (v) => {
       if (v == null) return null;
       const a = Math.abs(v);
@@ -1051,12 +1062,12 @@
     };
 
     renderKV($("#kv-alignment"), [
-      ["Azimuth", isFinite(az) ? `${az.toFixed(2)}°` : null],
-      ["Elevation", isFinite(el) ? `${el.toFixed(2)}°` : null],
-      ["Tilt", isFinite(tilt) ? `${tilt.toFixed(2)}°` : null],
-      ["Uncertainty", isFinite(unc) ? `±${unc.toFixed(2)}°` : null],
-      ["Δ Azimuth", deltaAz != null ? fmtDelta(deltaAz) : null, deltaClass(deltaAz)],
-      ["Δ Elevation", deltaEl != null ? fmtDelta(deltaEl) : null, deltaClass(deltaEl)],
+      [i18n.t("kv.azimuth"), isFinite(az) ? `${nfix(az, 2)}°` : null],
+      [i18n.t("kv.elevation"), isFinite(el) ? `${nfix(el, 2)}°` : null],
+      [i18n.t("kv.tilt"), isFinite(tilt) ? `${nfix(tilt, 2)}°` : null],
+      [i18n.t("kv.uncertainty"), isFinite(unc) ? `±${nfix(unc, 2)}°` : null],
+      [i18n.t("kv.delta_azimuth"), deltaAz != null ? fmtDelta(deltaAz) : null, deltaClass(deltaAz)],
+      [i18n.t("kv.delta_elevation"), deltaEl != null ? fmtDelta(deltaEl) : null, deltaClass(deltaEl)],
     ]);
   };
 
@@ -1072,13 +1083,13 @@
     lastLocation = loc;
     const { lat, lon, alt } = loc.lla;
     renderKV($("#kv-location"), [
-      ["Latitude", lat != null ? `${Number(lat).toFixed(6)}°` : null],
-      ["Longitude", lon != null ? `${Number(lon).toFixed(6)}°` : null],
-      ["Altitude", alt != null ? `${Number(alt).toFixed(1)} m` : null],
-      ["Source", loc.source],
-      ["Accuracy σ", loc.sigma_m != null ? `±${Number(loc.sigma_m).toFixed(1)} m` : null],
-      ["Horizontal speed", loc.horizontal_speed_mps != null ? `${Number(loc.horizontal_speed_mps).toFixed(2)} m/s` : null],
-      ["Vertical speed", loc.vertical_speed_mps != null ? `${Number(loc.vertical_speed_mps).toFixed(2)} m/s` : null],
+      [i18n.t("kv.latitude"), lat != null ? `${nfix(lat, 6)}°` : null],
+      [i18n.t("kv.longitude"), lon != null ? `${nfix(lon, 6)}°` : null],
+      [i18n.t("kv.altitude"), alt != null ? `${nfix(alt, 1)} ${i18n.t("units.m")}` : null],
+      [i18n.t("kv.source"), loc.source],
+      [i18n.t("kv.accuracy_sigma"), loc.sigma_m != null ? `±${nfix(loc.sigma_m, 1)} ${i18n.t("units.m")}` : null],
+      [i18n.t("kv.horizontal_speed"), loc.horizontal_speed_mps != null ? `${nfix(loc.horizontal_speed_mps, 2)} ${i18n.t("units.mps")}` : null],
+      [i18n.t("kv.vertical_speed"), loc.vertical_speed_mps != null ? `${nfix(loc.vertical_speed_mps, 2)} ${i18n.t("units.mps")}` : null],
     ]);
     const link = $("#maps-link");
     if (lat != null && lon != null) {
@@ -1200,8 +1211,8 @@
   const fmtDurationNs = (ns) => {
     const s = Number(ns) / 1e9;
     if (!isFinite(s) || s < 0) return "—";
-    if (s < 1) return `${(s * 1000).toFixed(0)} ms`;
-    if (s < 60) return `${s.toFixed(1)} s`;
+    if (s < 1) return `${i18n.fmtNumber(s * 1000, { maximumFractionDigits: 0 })} ${i18n.t("units.ms")}`;
+    if (s < 60) return `${nfix(s, 1)} ${i18n.t("units.s")}`;
     const m = Math.floor(s / 60);
     const sr = Math.round(s - m * 60);
     return sr ? `${m}m ${sr}s` : `${m}m`;
@@ -1212,12 +1223,12 @@
     if (!isFinite(secs) || secs < 1577836800) return "";
     const d = new Date(secs * 1000);
     const diff = (Date.now() - d.getTime()) / 1000;
-    if (diff < 0) return d.toLocaleTimeString();
-    if (diff < 60) return "just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 7 * 86400) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
+    if (diff < 0) return i18n.fmtTime(d);
+    if (diff < 60) return i18n.t("time.just_now");
+    if (diff < 3600) return i18n.t("time.m_ago", { n: Math.floor(diff / 60) });
+    if (diff < 86400) return i18n.t("time.h_ago", { n: Math.floor(diff / 3600) });
+    if (diff < 7 * 86400) return i18n.t("time.d_ago", { n: Math.floor(diff / 86400) });
+    return i18n.fmtDate(d);
   };
 
   const prettify = (s, prefix) => {
@@ -1242,9 +1253,9 @@
     const count = $("#outages-count");
     list.replaceChildren();
     const arr = Array.isArray(outages) ? outages : [];
-    count.textContent = arr.length ? `${arr.length} recorded` : "";
+    count.textContent = arr.length ? i18n.tp("outages.count", arr.length) : "";
     if (!arr.length) {
-      list.appendChild(el("div", { class: "empty", text: "No outages recorded in the dish history window." }));
+      list.appendChild(el("div", { class: "empty", text: i18n.t("empty.outages") }));
       return;
     }
     const sorted = [...arr].sort(
@@ -1257,7 +1268,7 @@
         el("div", { class: "event-reason", text: prettify(cause) }),
         el("div", { class: "event-meta" }, [
           el("span", { class: "event-duration", text: fmtDurationNs(o.duration_ns) }),
-          el("span", { text: o.did_switch ? "satellite switch" : "no switch" }),
+          el("span", { text: o.did_switch ? i18n.t("outages.sat_switch") : i18n.t("outages.no_switch") }),
         ]),
       ]);
       list.appendChild(row);
@@ -1269,9 +1280,9 @@
     const count = $("#events-count");
     list.replaceChildren();
     const arr = Array.isArray(events) ? events : [];
-    count.textContent = arr.length ? `${arr.length} recorded` : "";
+    count.textContent = arr.length ? i18n.tp("events.count", arr.length) : "";
     if (!arr.length) {
-      list.appendChild(el("div", { class: "empty", text: "No events recorded in the dish history window." }));
+      list.appendChild(el("div", { class: "empty", text: i18n.t("empty.events") }));
       return;
     }
     const sorted = [...arr].sort(
@@ -1299,18 +1310,18 @@
     const { min, max, avg } = renderSparkline(power);
     const last = [...power].reverse().find((v) => isFinite(Number(v)));
     const lastN = last != null ? Number(last) : null;
-    $("#power-current").textContent = lastN != null ? lastN.toFixed(1) : "—";
-    $("#power-min").textContent = min != null ? `${min.toFixed(1)} W` : "—";
-    $("#power-max").textContent = max != null ? `${max.toFixed(1)} W` : "—";
-    $("#power-avg").textContent = avg != null ? `${avg.toFixed(1)} W` : "—";
-    $("#power-window").textContent = power.length ? `${power.length}s` : "—";
+    $("#power-current").textContent = lastN != null ? nfix(lastN, 1) : "—";
+    $("#power-min").textContent = min != null ? `${nfix(min, 1)} ${i18n.t("units.w")}` : "—";
+    $("#power-max").textContent = max != null ? `${nfix(max, 1)} ${i18n.t("units.w")}` : "—";
+    $("#power-avg").textContent = avg != null ? `${nfix(avg, 1)} ${i18n.t("units.w")}` : "—";
+    $("#power-window").textContent = power.length ? `${power.length}${i18n.t("units.s")}` : "—";
 
     const pill = $("#power-pill");
     if (lastN != null) {
-      pill.textContent = "LIVE";
+      pill.textContent = i18n.t("pill.live");
       pill.dataset.state = "OKAY";
     } else {
-      pill.textContent = "NO DATA";
+      pill.textContent = i18n.t("pill.no_data");
       pill.dataset.state = "warn";
     }
 
@@ -1323,7 +1334,7 @@
     const r = await api.get("/api/history");
     if (r.ok && r.body.data) {
       renderHistory(r.body.data);
-      $("#history-last-update").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      $("#history-last-update").textContent = i18n.t("updated", { time: i18n.fmtTime(new Date()) });
     }
   };
 
@@ -1351,7 +1362,7 @@
 
   const refreshTelemetry = async () => {
     await Promise.all([refreshStatusOnly(), refreshHeavyTelemetry()]);
-    $("#last-update").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    $("#last-update").textContent = i18n.t("updated", { time: i18n.fmtTime(new Date()) });
   };
 
   // ───── Auto-refresh loop ─────
@@ -1369,7 +1380,7 @@
       // Every tick (1 s): dish status — drives live alignment and throughput.
       if (dishOk && isTabVisible("telemetry")) {
         refreshStatusOnly();
-        $("#last-update").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        $("#last-update").textContent = i18n.t("updated", { time: i18n.fmtTime(new Date()) });
       }
 
       // Every SLOW_REFRESH_TICKS (5 s): location + obstruction map.
@@ -1398,17 +1409,17 @@
   };
 
   const SNOW_MELT = {
-    AUTO: { label: "Automatic", desc: "Heater activates automatically when ice is detected.", state: "active", pill: "AUTO" },
-    ALWAYS_ON: { label: "Pre-heat", desc: "Heater runs continuously to prevent ice and snow buildup.", state: "warm", pill: "ON" },
-    ALWAYS_OFF: { label: "Off", desc: "Snow melting is disabled. The dish will not heat itself.", state: "off", pill: "OFF" },
+    AUTO: { key: "auto", state: "active" },
+    ALWAYS_ON: { key: "on", state: "warm" },
+    ALWAYS_OFF: { key: "off", state: "off" },
   };
   const LEVEL_DISH = {
-    TILT_LIKE_NORMAL: { label: "Tilt like normal", desc: "Dish follows the mounting bracket's natural tilt." },
-    FORCE_LEVEL: { label: "Force level", desc: "Dish is forced to horizontal alignment regardless of bracket." },
+    TILT_LIKE_NORMAL: { key: "tilt" },
+    FORCE_LEVEL: { key: "force" },
   };
   const LOC_MODE = {
-    LOCAL: { label: "Local only", desc: "Location is exposed over the LAN API only, not reported upstream." },
-    REMOTE: { label: "Remote", desc: "Location is reported to Starlink for remote management." },
+    LOCAL: { key: "local" },
+    REMOTE: { key: "remote" },
   };
 
   const fmtTimeOfDay = (minutes) => {
@@ -1424,9 +1435,9 @@
     if (!isFinite(n) || n <= 0) return "—";
     const h = Math.floor(n / 60);
     const mm = n % 60;
-    if (h && mm) return `${h}h ${mm}m`;
-    if (h) return `${h}h`;
-    return `${mm}m`;
+    if (h && mm) return i18n.t("units.h_min", { h, m: mm });
+    if (h) return i18n.t("units.h", { h });
+    return i18n.t("units.min", { m: mm });
   };
 
   const renderPowerSaveTimeline = (startMin, durMin, mode) => {
@@ -1438,14 +1449,14 @@
     const now = new Date();
     const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
     nowLine.style.left = `${(nowMin / 1440) * 100}%`;
-    nowLine.title = `Now: ${fmtTimeOfDay(nowMin)}`;
+    nowLine.title = i18n.t("config.ps.now_title", { time: fmtTimeOfDay(nowMin) });
 
     const s = Number(startMin);
     const d = Number(durMin);
     const enabled = mode === true && isFinite(s) && isFinite(d) && d > 0;
 
     if (enabled) {
-      pill.textContent = "ACTIVE";
+      pill.textContent = i18n.t("config.ps.active");
       pill.dataset.state = "OKAY";
       const firstLen = Math.min(d, 1440 - s);
       winA.classList.remove("hidden");
@@ -1465,16 +1476,16 @@
       $("#cfg-ps-start").textContent = fmtTimeOfDay(s);
       $("#cfg-ps-end").textContent = fmtTimeOfDay(endMin);
       $("#cfg-ps-duration").textContent = fmtDurationMin(d);
-      $("#cfg-ps-state").textContent = "Enabled";
+      $("#cfg-ps-state").textContent = i18n.t("config.ps.enabled_label");
     } else {
-      pill.textContent = mode === false ? "DISABLED" : "NOT SET";
+      pill.textContent = mode === false ? i18n.t("config.ps.disabled") : i18n.t("config.ps.not_set");
       pill.dataset.state = "warn";
       winA.classList.add("hidden");
       winB.classList.add("hidden");
       $("#cfg-ps-start").textContent = "—";
       $("#cfg-ps-end").textContent = "—";
       $("#cfg-ps-duration").textContent = "—";
-      $("#cfg-ps-state").textContent = mode === false ? "Disabled" : "Not configured";
+      $("#cfg-ps-state").textContent = mode === false ? i18n.t("config.ps.disabled_label") : i18n.t("config.ps.not_configured");
     }
   };
 
@@ -1486,19 +1497,19 @@
     const snow = pick(cfg, "snow_melt_mode", "snowMeltMode");
     const snowDef = (snow && SNOW_MELT[snow]) || null;
     const snowCard = $("#cfg-snowmelt");
-    $("#cfg-snow-value").textContent = snowDef ? snowDef.label : (snow || "Not set");
-    $("#cfg-snow-desc").textContent = snowDef ? snowDef.desc : "Current snow-melt behaviour is not reported by the dish.";
+    $("#cfg-snow-value").textContent = snowDef ? i18n.t(`snow.${snowDef.key}.label`) : (snow || i18n.t("config.snow_not_set"));
+    $("#cfg-snow-desc").textContent = snowDef ? i18n.t(`snow.${snowDef.key}.desc`) : i18n.t("config.snow_unknown_desc");
     snowCard.dataset.state = snowDef ? snowDef.state : "";
     const snowPill = $("#cfg-snow-pill");
-    snowPill.textContent = snowDef ? snowDef.pill : "—";
+    snowPill.textContent = snowDef ? i18n.t(`snow.${snowDef.key}.pill`) : "—";
     snowPill.dataset.state = snowDef ? (snowDef.state === "off" ? "warn" : "OKAY") : "unknown";
 
     // Level
     const level = pick(cfg, "level_dish_mode", "levelDishMode");
     const levelDef = (level && LEVEL_DISH[level]) || null;
     const levelCard = $("#cfg-level");
-    $("#cfg-level-value").textContent = levelDef ? levelDef.label : "Default";
-    $("#cfg-level-desc").textContent = levelDef ? levelDef.desc : "Dish uses its default orientation (tilt follows bracket).";
+    $("#cfg-level-value").textContent = levelDef ? i18n.t(`level.${levelDef.key}.label`) : i18n.t("config.level_default_label");
+    $("#cfg-level-desc").textContent = levelDef ? i18n.t(`level.${levelDef.key}.desc`) : i18n.t("config.level_default_desc");
     levelCard.dataset.state = levelDef ? "active" : "off";
 
     // Power save
@@ -1510,27 +1521,27 @@
     // Software updates
     const rebootHour = pick(cfg, "swupdate_reboot_hour", "swupdateRebootHour");
     const swuCard = $("#cfg-swu");
-    $("#cfg-swu-hour").textContent = rebootHour != null ? `${String(rebootHour).padStart(2, "0")}:00 UTC` : "—";
+    $("#cfg-swu-hour").textContent = rebootHour != null ? i18n.t("config.swu.hour_utc", { h: String(rebootHour).padStart(2, "0") }) : "—";
     swuCard.dataset.state = rebootHour != null ? "active" : "off";
     const deferral = pick(cfg, "swupdate_three_day_deferral_enabled", "swupdateThreeDayDeferralEnabled");
     const chips = $("#cfg-swu-chips");
     chips.replaceChildren();
     chips.appendChild(
-      el("span", { class: "chip", "data-on": String(Boolean(deferral)), text: "Three-day deferral" })
+      el("span", { class: "chip", "data-on": String(Boolean(deferral)), text: i18n.t("config.swu.three_day") })
     );
 
     // Location reporting
     const locReq = pick(cfg, "location_request_mode", "locationRequestMode");
     const locDef = (locReq && LOC_MODE[locReq]) || null;
     const locCard = $("#cfg-loc");
-    $("#cfg-loc-value").textContent = locDef ? locDef.label : (locReq || "—");
-    $("#cfg-loc-desc").textContent = locDef ? locDef.desc : "Unknown location reporting mode.";
+    $("#cfg-loc-value").textContent = locDef ? i18n.t(`loc.${locDef.key}.label`) : (locReq || "—");
+    $("#cfg-loc-desc").textContent = locDef ? i18n.t(`loc.${locDef.key}.desc`) : i18n.t("config.loc_unknown_desc");
     locCard.dataset.state = locReq === "LOCAL" ? "active" : locReq ? "warm" : "off";
 
     // Asset class
     const assetClass = pick(cfg, "asset_class", "assetClass");
     const assetCard = $("#cfg-asset");
-    $("#cfg-asset-value").textContent = assetClass != null ? `Class ${assetClass}` : "—";
+    $("#cfg-asset-value").textContent = assetClass != null ? i18n.t("config.asset_class", { n: assetClass }) : "—";
     assetCard.dataset.state = assetClass != null ? "active" : "off";
 
     // Raw
@@ -1542,8 +1553,8 @@
     if (r.ok) {
       renderConfig(r.body.data);
     } else {
-      $("#cfg-snow-value").textContent = "Failed to load";
-      $("#cfg-snow-desc").textContent = r.body.error || "Unknown error";
+      $("#cfg-snow-value").textContent = i18n.t("config.failed_load");
+      $("#cfg-snow-desc").textContent = r.body.error || i18n.t("config.unknown_error");
       $("#raw-config").textContent = "";
     }
   };
@@ -1553,22 +1564,22 @@
   const initActions = () => {
     $("#btn-reboot").addEventListener("click", async () => {
       const ok = await confirmAction(
-        "Reboot the dish?",
-        "Connectivity will drop for ~90 seconds while the dish restarts.",
-        "Reboot now"
+        i18n.t("confirm.reboot.title"),
+        i18n.t("confirm.reboot.msg"),
+        i18n.t("confirm.reboot.ok")
       );
       if (!ok) return;
       const r = await api.post("/api/reboot", {});
-      if (r.ok) toast("success", "Reboot command sent");
-      else toast("error", "Reboot failed", r.body.error || "");
+      if (r.ok) toast("success", i18n.t("toast.reboot_sent"));
+      else toast("error", i18n.t("toast.reboot_failed"), r.body.error || "");
     });
 
     $("#btn-ping").addEventListener("click", async () => {
       const out = $("#ping-output");
-      out.textContent = "Running ping…";
+      out.textContent = i18n.t("toast.ping_running");
       const r = await api.get("/api/ping");
-      if (r.ok) out.textContent = r.body.output || r.body.stderr || "(no output)";
-      else out.textContent = r.body.error || "Ping failed";
+      if (r.ok) out.textContent = r.body.output || r.body.stderr || i18n.t("toast.ping_no_output");
+      else out.textContent = r.body.error || i18n.t("toast.ping_failed");
     });
 
     $("#btn-export").addEventListener("click", async () => {
@@ -1594,7 +1605,7 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast("success", "Export downloaded");
+      toast("success", i18n.t("toast.export_downloaded"));
     });
   };
 
@@ -1606,7 +1617,7 @@
       const box = $("#services-list");
       box.replaceChildren();
       if (!r.ok) {
-        box.appendChild(el("div", { class: "muted", text: r.body.error || "Failed" }));
+        box.appendChild(el("div", { class: "muted", text: r.body.error || i18n.t("toast.failed") }));
         return;
       }
       for (const [svc, methods] of Object.entries(r.body.data || {})) {
@@ -1623,7 +1634,7 @@
       const box = $("#fields-list");
       box.replaceChildren();
       if (!r.ok) {
-        box.appendChild(el("div", { class: "muted", text: r.body.error || "Failed" }));
+        box.appendChild(el("div", { class: "muted", text: r.body.error || i18n.t("toast.failed") }));
         return;
       }
       for (const f of r.body.data || []) {
@@ -1641,7 +1652,7 @@
       const r = await api.get("/api/diagnostics");
       $("#raw-diag").textContent = r.ok
         ? JSON.stringify(r.body.data, null, 2)
-        : r.body.error || "Failed";
+        : r.body.error || i18n.t("toast.failed");
     });
 
     $("#form-raw").addEventListener("submit", async (e) => {
@@ -1654,7 +1665,7 @@
         try {
           payload = JSON.parse(raw);
         } catch (err) {
-          toast("error", "Invalid JSON", err.message);
+          toast("error", i18n.t("toast.invalid_json"), err.message);
           return;
         }
       }
@@ -1673,10 +1684,10 @@
       if (dot) dot.dataset.state = "unknown";
       const r = await api.post("/api/reconnect", {});
       if (r.ok && r.body.connected) {
-        toast("success", "Dish reconnected");
+        toast("success", i18n.t("toast.dish_reconnected"));
         refreshTelemetry();
       } else {
-        toast("error", "Dish reconnect failed", (r.body && r.body.message) || "");
+        toast("error", i18n.t("toast.dish_reconnect_failed"), (r.body && r.body.message) || "");
       }
       refreshState();
     });
@@ -1686,10 +1697,10 @@
       if (dot) dot.dataset.state = "unknown";
       const r = await api.post("/api/router/reconnect", {});
       if (r.ok && r.body.connected) {
-        toast("success", "Router reconnected");
+        toast("success", i18n.t("toast.router_reconnected"));
         refreshRouter();
       } else {
-        toast("error", "Router reconnect failed", (r.body && r.body.message) || "");
+        toast("error", i18n.t("toast.router_reconnect_failed"), (r.body && r.body.message) || "");
       }
       refreshState();
     });
@@ -1706,14 +1717,36 @@
 
   // ───── Boot ─────
 
+  const initLangSwitcher = () => {
+    const sel = $("#lang-select");
+    if (!sel) return;
+    sel.value = i18n.lang;
+    sel.addEventListener("change", () => i18n.setLang(sel.value));
+    i18n.onChange(() => {
+      const state = currentState;
+      if (state && state.dish && state.dish.connected) {
+        refreshTelemetry();
+        loadConfig();
+      }
+      if (state && state.router && state.router.connected) {
+        refreshRouter();
+      }
+      if (isTabVisible("history")) refreshHistory();
+    });
+  };
+
+  let currentState = null;
+
   document.addEventListener("DOMContentLoaded", async () => {
     initTabs();
     initHeader();
     initConfig();
     initActions();
     initAdvanced();
+    initLangSwitcher();
 
     const state = await refreshState();
+    currentState = state;
     if (state && state.dish && state.dish.connected) {
       refreshTelemetry();
       loadConfig();

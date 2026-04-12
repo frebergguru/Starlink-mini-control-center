@@ -137,6 +137,25 @@ button {
   text-transform: uppercase;
 }
 
+.lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.lang-select:hover {
+  border-color: var(--accent, #56ccf2);
+}
+
 .conn .btn {
   padding: 4px 8px;
   font-size: 12px;

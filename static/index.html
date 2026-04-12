@@ -12,33 +12,37 @@
     <div class="brand">
       <span class="brand-mark">✦</span>
       <div>
-        <h1>Starlink Mini</h1>
-        <p class="brand-sub">Control Center</p>
+        <h1 data-i18n="brand.title">Starlink Mini</h1>
+        <p class="brand-sub" data-i18n="brand.sub">Control Center</p>
       </div>
     </div>
     <div class="conn-group">
-      <div class="conn" title="Starlink dish">
+      <div class="conn" data-i18n-attr="title:conn.dish" title="Starlink dish">
         <span id="conn-dot" class="conn-dot" data-state="unknown" aria-hidden="true"></span>
-        <span class="conn-label-mini">Dish</span>
+        <span class="conn-label-mini" data-i18n="conn.dish_label">Dish</span>
         <span id="conn-addr" class="conn-addr"></span>
         <button id="btn-reconnect" type="button" class="btn btn-ghost">↻</button>
       </div>
-      <div class="conn" title="Starlink router">
+      <div class="conn" data-i18n-attr="title:conn.router" title="Starlink router">
         <span id="router-conn-dot" class="conn-dot" data-state="unknown" aria-hidden="true"></span>
-        <span class="conn-label-mini">Router</span>
+        <span class="conn-label-mini" data-i18n="conn.router_label">Router</span>
         <span id="router-conn-addr" class="conn-addr"></span>
         <button id="btn-router-reconnect" type="button" class="btn btn-ghost">↻</button>
       </div>
+      <select id="lang-select" class="lang-select" data-i18n-attr="aria-label:lang.label" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="nb">NB</option>
+      </select>
     </div>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Sections">
-    <button type="button" role="tab" class="tab" data-tab="telemetry" aria-selected="true">Telemetry</button>
-    <button type="button" role="tab" class="tab" data-tab="history" aria-selected="false">History</button>
-    <button type="button" role="tab" class="tab" data-tab="router" aria-selected="false">Router</button>
-    <button type="button" role="tab" class="tab" data-tab="config" aria-selected="false">Configuration</button>
-    <button type="button" role="tab" class="tab" data-tab="actions" aria-selected="false">Actions</button>
-    <button type="button" role="tab" class="tab" data-tab="advanced" aria-selected="false">Advanced</button>
+  <nav class="tabs" role="tablist" data-i18n-attr="aria-label:nav.sections" aria-label="Sections">
+    <button type="button" role="tab" class="tab" data-tab="telemetry" aria-selected="true" data-i18n="tabs.telemetry">Telemetry</button>
+    <button type="button" role="tab" class="tab" data-tab="history" aria-selected="false" data-i18n="tabs.history">History</button>
+    <button type="button" role="tab" class="tab" data-tab="router" aria-selected="false" data-i18n="tabs.router">Router</button>
+    <button type="button" role="tab" class="tab" data-tab="config" aria-selected="false" data-i18n="tabs.config">Configuration</button>
+    <button type="button" role="tab" class="tab" data-tab="actions" aria-selected="false" data-i18n="tabs.actions">Actions</button>
+    <button type="button" role="tab" class="tab" data-tab="advanced" aria-selected="false" data-i18n="tabs.advanced">Advanced</button>
   </nav>
 
   <main>
@@ -47,88 +51,88 @@
       <div class="toolbar">
         <label class="check">
           <input type="checkbox" id="auto-refresh" checked>
-          <span>Live refresh</span>
+          <span data-i18n="toolbar.live_refresh">Live refresh</span>
         </label>
-        <button id="btn-refresh" type="button" class="btn btn-ghost">Refresh now</button>
+        <button id="btn-refresh" type="button" class="btn btn-ghost" data-i18n="toolbar.refresh_now">Refresh now</button>
         <span id="last-update" class="muted"></span>
       </div>
 
       <div class="grid">
         <article class="card card-hero">
           <header class="card-head">
-            <h2>Throughput</h2>
+            <h2 data-i18n="card.throughput">Throughput</h2>
             <span id="status-pill" class="pill" data-state="unknown">—</span>
           </header>
           <div class="throughput">
             <div class="tp-row">
-              <div class="tp-label">Download</div>
+              <div class="tp-label" data-i18n="tp.download">Download</div>
               <div class="tp-value" id="tp-dl">—</div>
               <div class="bar"><span id="bar-dl" class="bar-fill bar-dl"></span></div>
             </div>
             <div class="tp-row">
-              <div class="tp-label">Upload</div>
+              <div class="tp-label" data-i18n="tp.upload">Upload</div>
               <div class="tp-value" id="tp-ul">—</div>
               <div class="bar"><span id="bar-ul" class="bar-fill bar-ul"></span></div>
             </div>
           </div>
           <dl class="kv kv-inline">
-            <div><dt>Latency</dt><dd id="m-lat">—</dd></div>
-            <div><dt>Drop rate</dt><dd id="m-drop">—</dd></div>
-            <div><dt>SNR</dt><dd id="m-snr">—</dd></div>
-            <div><dt>Uptime</dt><dd id="m-uptime">—</dd></div>
+            <div><dt data-i18n="kv.latency">Latency</dt><dd id="m-lat">—</dd></div>
+            <div><dt data-i18n="kv.drop_rate">Drop rate</dt><dd id="m-drop">—</dd></div>
+            <div><dt data-i18n="kv.snr">SNR</dt><dd id="m-snr">—</dd></div>
+            <div><dt data-i18n="kv.uptime">Uptime</dt><dd id="m-uptime">—</dd></div>
           </dl>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Dish Status</h2></header>
+          <header class="card-head"><h2 data-i18n="card.dish_status">Dish Status</h2></header>
           <dl class="kv" id="kv-status"></dl>
           <div class="alerts" id="alerts"></div>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>GPS &amp; Location</h2></header>
+          <header class="card-head"><h2 data-i18n="card.gps">GPS &amp; Location</h2></header>
           <dl class="kv" id="kv-location"></dl>
-          <a id="maps-link" class="btn btn-ghost hidden" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+          <a id="maps-link" class="btn btn-ghost hidden" target="_blank" rel="noopener" data-i18n="maps.open">Open in Google Maps ↗</a>
         </article>
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Alignment</h2>
+            <h2 data-i18n="card.alignment">Alignment</h2>
             <span id="align-pill" class="pill" data-state="unknown">—</span>
           </header>
           <div class="align-wrap">
-            <svg id="align-svg" class="align-svg" viewBox="0 0 220 220" role="img" aria-label="Dish sky view"></svg>
+            <svg id="align-svg" class="align-svg" viewBox="0 0 220 220" role="img" data-i18n-attr="aria-label:align.sky_view" aria-label="Dish sky view"></svg>
             <div class="align-legend">
-              <span class="align-legend-item align-legend-current">Current boresight</span>
-              <span class="align-legend-item align-legend-target">Desired target</span>
+              <span class="align-legend-item align-legend-current" data-i18n="align.current_boresight">Current boresight</span>
+              <span class="align-legend-item align-legend-target" data-i18n="align.desired_target">Desired target</span>
             </div>
           </div>
           <dl class="kv kv-inline" id="kv-alignment"></dl>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Signal &amp; Ready States</h2></header>
+          <header class="card-head"><h2 data-i18n="card.signal">Signal &amp; Ready States</h2></header>
           <dl class="kv" id="kv-signal"></dl>
         </article>
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Obstruction Map</h2>
+            <h2 data-i18n="card.obstruction">Obstruction Map</h2>
             <span class="muted" id="obs-grid-info"></span>
           </header>
           <div class="obs-wrap">
-            <svg id="obs-svg" class="obs-svg" role="img" aria-label="Obstruction map"></svg>
+            <svg id="obs-svg" class="obs-svg" role="img" data-i18n-attr="aria-label:obs.aria" aria-label="Obstruction map"></svg>
           </div>
           <dl class="kv kv-inline" id="kv-obstruction"></dl>
           <div class="legend">
-            <span class="lg lg-clear"></span> clear
-            <span class="lg lg-partial"></span> partial
-            <span class="lg lg-blocked"></span> blocked
+            <span class="lg lg-clear"></span> <span data-i18n="obs.clear">clear</span>
+            <span class="lg lg-partial"></span> <span data-i18n="obs.partial">partial</span>
+            <span class="lg lg-blocked"></span> <span data-i18n="obs.blocked">blocked</span>
           </div>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Device Info</h2></header>
+          <header class="card-head"><h2 data-i18n="card.device_info">Device Info</h2></header>
           <dl class="kv" id="kv-device"></dl>
         </article>
 
@@ -138,7 +142,7 @@
              in renderStatus() in app.js. See markers in each file.    -->
         <article class="card" id="card-routers">
           <header class="card-head">
-            <h2>Connected Routers</h2>
+            <h2 data-i18n="card.connected_routers">Connected Routers</h2>
             <span id="routers-count" class="muted small"></span>
           </header>
           <div id="routers-list" class="device-list"></div>
@@ -152,13 +156,13 @@
     <section id="tab-router" class="tab-panel hidden" role="tabpanel" aria-labelledby="router">
       <div class="toolbar">
         <span id="router-last-update" class="muted"></span>
-        <button id="btn-router-refresh" type="button" class="btn btn-ghost">Refresh now</button>
+        <button id="btn-router-refresh" type="button" class="btn btn-ghost" data-i18n="toolbar.refresh_now">Refresh now</button>
       </div>
 
       <div class="grid">
         <article class="card card-hero">
           <header class="card-head">
-            <h2>Router Status</h2>
+            <h2 data-i18n="card.router_status">Router Status</h2>
             <span id="router-status-pill" class="pill" data-state="unknown">—</span>
           </header>
           <dl class="kv kv-inline" id="kv-router-hero"></dl>
@@ -167,7 +171,7 @@
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>WiFi Clients</h2>
+            <h2 data-i18n="card.wifi_clients">WiFi Clients</h2>
             <span id="router-clients-count" class="muted small"></span>
           </header>
           <div id="router-clients-list" class="device-list"></div>
@@ -175,25 +179,25 @@
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>WiFi Networks</h2>
+            <h2 data-i18n="card.wifi_networks">WiFi Networks</h2>
             <span class="muted small" id="router-wifi-count"></span>
           </header>
           <div id="router-networks" class="wifi-networks"></div>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Radio Stats</h2></header>
+          <header class="card-head"><h2 data-i18n="card.radio_stats">Radio Stats</h2></header>
           <div id="router-radios" class="radio-list"></div>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Self-test</h2></header>
+          <header class="card-head"><h2 data-i18n="card.self_test">Self-test</h2></header>
           <div id="router-selftest" class="selftest-list"></div>
         </article>
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Network Interfaces</h2>
+            <h2 data-i18n="card.network_interfaces">Network Interfaces</h2>
             <span class="muted small" id="router-iface-count"></span>
           </header>
           <div id="router-interfaces" class="iface-list"></div>
@@ -204,14 +208,14 @@
     <!-- ───── History ───── -->
     <section id="tab-history" class="tab-panel hidden" role="tabpanel" aria-labelledby="history">
       <div class="toolbar">
-        <button id="btn-history-refresh" type="button" class="btn btn-ghost">Refresh now</button>
+        <button id="btn-history-refresh" type="button" class="btn btn-ghost" data-i18n="toolbar.refresh_now">Refresh now</button>
         <span id="history-last-update" class="muted"></span>
       </div>
 
       <div class="grid">
         <article class="card card-hero">
           <header class="card-head">
-            <h2>Power Draw</h2>
+            <h2 data-i18n="card.power_draw">Power Draw</h2>
             <span id="power-pill" class="pill" data-state="unknown">—</span>
           </header>
           <div class="power-hero">
@@ -224,16 +228,16 @@
             </div>
           </div>
           <dl class="kv kv-inline">
-            <div><dt>Min</dt><dd id="power-min">—</dd></div>
-            <div><dt>Max</dt><dd id="power-max">—</dd></div>
-            <div><dt>Avg</dt><dd id="power-avg">—</dd></div>
-            <div><dt>Window</dt><dd id="power-window">—</dd></div>
+            <div><dt data-i18n="kv.min">Min</dt><dd id="power-min">—</dd></div>
+            <div><dt data-i18n="kv.max">Max</dt><dd id="power-max">—</dd></div>
+            <div><dt data-i18n="kv.avg">Avg</dt><dd id="power-avg">—</dd></div>
+            <div><dt data-i18n="kv.window">Window</dt><dd id="power-window">—</dd></div>
           </dl>
         </article>
 
         <article class="card">
           <header class="card-head">
-            <h2>Outages</h2>
+            <h2 data-i18n="card.outages">Outages</h2>
             <span class="muted small" id="outages-count"></span>
           </header>
           <div class="event-list" id="outages-list"></div>
@@ -241,7 +245,7 @@
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Event Log</h2>
+            <h2 data-i18n="card.event_log">Event Log</h2>
             <span class="muted small" id="events-count"></span>
           </header>
           <div class="event-list" id="events-list"></div>
@@ -252,24 +256,24 @@
     <!-- ───── Configuration ───── -->
     <section id="tab-config" class="tab-panel hidden" role="tabpanel" aria-labelledby="config">
       <div class="toolbar">
-        <p class="muted small toolbar-note">Read-only — the LAN gRPC endpoint rejects writes with <code>PERMISSION_DENIED</code>. Change settings from the Starlink mobile app.</p>
-        <button id="btn-reload-config" type="button" class="btn btn-ghost">Reload</button>
+        <p class="muted small toolbar-note" data-i18n-html="config.readonly_html">Read-only — the LAN gRPC endpoint rejects writes with <code>PERMISSION_DENIED</code>. Change settings from the Starlink mobile app.</p>
+        <button id="btn-reload-config" type="button" class="btn btn-ghost" data-i18n="toolbar.reload">Reload</button>
       </div>
 
       <div class="grid">
         <article class="card card-hero feature-card" id="cfg-snowmelt">
           <header class="card-head">
-            <h2>Snow Melt</h2>
+            <h2 data-i18n="card.snow_melt">Snow Melt</h2>
             <span id="cfg-snow-pill" class="pill" data-state="unknown">—</span>
           </header>
           <div class="feature-value" id="cfg-snow-value">—</div>
-          <p class="feature-desc" id="cfg-snow-desc">Loading current setting…</p>
+          <p class="feature-desc" id="cfg-snow-desc" data-i18n="config.snow_loading">Loading current setting…</p>
           <div class="feature-accent" aria-hidden="true"></div>
         </article>
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Power Save Schedule</h2>
+            <h2 data-i18n="card.power_save">Power Save Schedule</h2>
             <span id="cfg-ps-pill" class="pill" data-state="unknown">—</span>
           </header>
           <div class="timeline">
@@ -287,46 +291,46 @@
             </div>
           </div>
           <dl class="kv kv-inline" id="cfg-ps-kv">
-            <div><dt>Starts</dt><dd id="cfg-ps-start">—</dd></div>
-            <div><dt>Ends</dt><dd id="cfg-ps-end">—</dd></div>
-            <div><dt>Duration</dt><dd id="cfg-ps-duration">—</dd></div>
-            <div><dt>State</dt><dd id="cfg-ps-state">—</dd></div>
+            <div><dt data-i18n="kv.starts">Starts</dt><dd id="cfg-ps-start">—</dd></div>
+            <div><dt data-i18n="kv.ends">Ends</dt><dd id="cfg-ps-end">—</dd></div>
+            <div><dt data-i18n="kv.duration">Duration</dt><dd id="cfg-ps-duration">—</dd></div>
+            <div><dt data-i18n="kv.state">State</dt><dd id="cfg-ps-state">—</dd></div>
           </dl>
         </article>
 
         <article class="card feature-card" id="cfg-level">
-          <header class="card-head"><h2>Dish Level</h2></header>
+          <header class="card-head"><h2 data-i18n="card.dish_level">Dish Level</h2></header>
           <div class="feature-value" id="cfg-level-value">—</div>
           <p class="feature-desc" id="cfg-level-desc"></p>
           <div class="feature-accent" aria-hidden="true"></div>
         </article>
 
         <article class="card feature-card" id="cfg-swu">
-          <header class="card-head"><h2>Software Updates</h2></header>
+          <header class="card-head"><h2 data-i18n="card.software_updates">Software Updates</h2></header>
           <div class="feature-value" id="cfg-swu-hour">—</div>
-          <p class="feature-desc">Reboot window for applying firmware updates</p>
+          <p class="feature-desc" data-i18n="config.swu.reboot_window_desc">Reboot window for applying firmware updates</p>
           <div class="chips" id="cfg-swu-chips"></div>
           <div class="feature-accent" aria-hidden="true"></div>
         </article>
 
         <article class="card feature-card" id="cfg-loc">
-          <header class="card-head"><h2>Location Reporting</h2></header>
+          <header class="card-head"><h2 data-i18n="card.location_reporting">Location Reporting</h2></header>
           <div class="feature-value" id="cfg-loc-value">—</div>
           <p class="feature-desc" id="cfg-loc-desc"></p>
           <div class="feature-accent" aria-hidden="true"></div>
         </article>
 
         <article class="card feature-card" id="cfg-asset">
-          <header class="card-head"><h2>Asset Class</h2></header>
+          <header class="card-head"><h2 data-i18n="card.asset_class">Asset Class</h2></header>
           <div class="feature-value" id="cfg-asset-value">—</div>
-          <p class="feature-desc">Firmware-reported service tier identifier</p>
+          <p class="feature-desc" data-i18n="config.asset_desc">Firmware-reported service tier identifier</p>
           <div class="feature-accent" aria-hidden="true"></div>
         </article>
 
         <article class="card card-wide">
-          <header class="card-head"><h2>Raw Configuration</h2></header>
+          <header class="card-head"><h2 data-i18n="card.raw_config">Raw Configuration</h2></header>
           <details class="raw-details">
-            <summary>Show full JSON</summary>
+            <summary data-i18n="raw.show">Show full JSON</summary>
             <pre id="raw-config" class="raw"></pre>
           </details>
         </article>
@@ -337,22 +341,22 @@
     <section id="tab-actions" class="tab-panel hidden" role="tabpanel" aria-labelledby="actions">
       <div class="grid">
         <article class="card">
-          <header class="card-head"><h2>Reboot Dish</h2></header>
-          <p class="muted">Restarts the dish. Connectivity drops for ~90 seconds.</p>
-          <button id="btn-reboot" type="button" class="btn btn-danger">Reboot Dish</button>
+          <header class="card-head"><h2 data-i18n="card.reboot_dish">Reboot Dish</h2></header>
+          <p class="muted" data-i18n="actions.reboot_desc">Restarts the dish. Connectivity drops for ~90 seconds.</p>
+          <button id="btn-reboot" type="button" class="btn btn-danger" data-i18n="actions.reboot_btn">Reboot Dish</button>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Ping Test</h2></header>
-          <p class="muted">ICMP echo to 192.168.100.1 (5 packets).</p>
-          <button id="btn-ping" type="button" class="btn btn-primary">Run ping</button>
+          <header class="card-head"><h2 data-i18n="card.ping_test">Ping Test</h2></header>
+          <p class="muted" data-i18n="actions.ping_desc">ICMP echo to 192.168.100.1 (5 packets).</p>
+          <button id="btn-ping" type="button" class="btn btn-primary" data-i18n="actions.ping_run">Run ping</button>
           <pre id="ping-output" class="raw"></pre>
         </article>
 
         <article class="card">
-          <header class="card-head"><h2>Export Full Dump</h2></header>
-          <p class="muted">Downloads all telemetry and config as JSON.</p>
-          <button id="btn-export" type="button" class="btn btn-primary">Download JSON</button>
+          <header class="card-head"><h2 data-i18n="card.export_dump">Export Full Dump</h2></header>
+          <p class="muted" data-i18n="actions.export_desc">Downloads all telemetry and config as JSON.</p>
+          <button id="btn-export" type="button" class="btn btn-primary" data-i18n="actions.export_btn">Download JSON</button>
         </article>
       </div>
     </section>
@@ -362,43 +366,43 @@
       <div class="grid">
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Raw gRPC Request</h2>
-            <span class="muted small">Whitelisted keys only</span>
+            <h2 data-i18n="card.raw_grpc">Raw gRPC Request</h2>
+            <span class="muted small" data-i18n="advanced.whitelisted">Whitelisted keys only</span>
           </header>
           <form id="form-raw" class="form">
             <label class="field">
-              <span>Request key</span>
-              <input type="text" name="key" placeholder="e.g. getStatus" required>
+              <span data-i18n="advanced.request_key">Request key</span>
+              <input type="text" name="key" data-i18n-attr="placeholder:advanced.request_key_ph" placeholder="e.g. getStatus" required>
             </label>
             <label class="field">
-              <span>Payload (JSON, optional)</span>
+              <span data-i18n="advanced.payload">Payload (JSON, optional)</span>
               <textarea name="payload" rows="4" placeholder="{}"></textarea>
             </label>
-            <button type="submit" class="btn btn-primary">Send</button>
+            <button type="submit" class="btn btn-primary" data-i18n="advanced.send">Send</button>
           </form>
           <pre id="raw-output" class="raw"></pre>
         </article>
 
         <article class="card">
           <header class="card-head">
-            <h2>gRPC Services</h2>
-            <button id="btn-load-services" type="button" class="btn btn-ghost">Load</button>
+            <h2 data-i18n="card.grpc_services">gRPC Services</h2>
+            <button id="btn-load-services" type="button" class="btn btn-ghost" data-i18n="advanced.load">Load</button>
           </header>
           <div id="services-list" class="tree"></div>
         </article>
 
         <article class="card">
           <header class="card-head">
-            <h2>Request Fields</h2>
-            <button id="btn-load-fields" type="button" class="btn btn-ghost">Load</button>
+            <h2 data-i18n="card.request_fields">Request Fields</h2>
+            <button id="btn-load-fields" type="button" class="btn btn-ghost" data-i18n="advanced.load">Load</button>
           </header>
           <div id="fields-list" class="tree"></div>
         </article>
 
         <article class="card card-wide">
           <header class="card-head">
-            <h2>Diagnostics</h2>
-            <button id="btn-load-diag" type="button" class="btn btn-ghost">Load</button>
+            <h2 data-i18n="card.diagnostics">Diagnostics</h2>
+            <button id="btn-load-diag" type="button" class="btn btn-ghost" data-i18n="advanced.load">Load</button>
           </header>
           <pre id="raw-diag" class="raw"></pre>
         </article>
@@ -409,11 +413,11 @@
   <!-- Confirmation modal -->
   <dialog id="confirm-modal" class="modal">
     <form method="dialog" class="modal-body">
-      <h3 id="confirm-title">Confirm action</h3>
-      <p id="confirm-msg">Are you sure?</p>
+      <h3 id="confirm-title" data-i18n="modal.confirm_title">Confirm action</h3>
+      <p id="confirm-msg" data-i18n="modal.confirm_msg">Are you sure?</p>
       <div class="modal-actions">
-        <button value="cancel" class="btn btn-ghost">Cancel</button>
-        <button id="confirm-ok" value="ok" class="btn btn-danger">Confirm</button>
+        <button value="cancel" class="btn btn-ghost" data-i18n="modal.cancel">Cancel</button>
+        <button id="confirm-ok" value="ok" class="btn btn-danger" data-i18n="modal.confirm">Confirm</button>
       </div>
     </form>
   </dialog>
@@ -421,6 +425,7 @@
   <!-- Toast container -->
   <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
 
+  <script src="/static/i18n.js"></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>
