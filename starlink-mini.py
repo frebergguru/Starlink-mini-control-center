@@ -559,35 +559,6 @@ def display_status(data, diag=None):
                 pf(k.replace("_"," ").title(),v)
         sec_end()
 
-def display_history(data):
-    h=sg(data,"getHistory") or sg(data,"dish_get_history") or sg(data,"dishGetHistory") or data
-    if not h: print(f"  {C.DIM}No history data.{C.RST}"); return
-    sec("HISTORY STATUS")
-    current=sg(h,"current")
-    if current: pf("Current Index",current)
-    sec_end()
-
-    sec("NETWORK HISTORY")
-    dl=sg(h,"downlink_throughput_bps") or sg(h,"downlinkThroughputBps") or []
-    ul=sg(h,"uplink_throughput_bps") or sg(h,"uplinkThroughputBps") or []
-    lat=sg(h,"pop_ping_latency_ms") or sg(h,"popPingLatencyMs") or []
-    def avg(a,n=10):
-        r=[float(x) for x in a[-n:] if x]; return sum(r)/len(r) if r else 0
-    if dl:
-        pf("Avg DL (10s)",fmt_bps(avg(dl)))
-        peak=[float(x) for x in dl[-10:] if x]
-        if peak: pf("Peak DL (10s)",fmt_bps(max(peak)))
-    if ul: pf("Avg UL (10s)",fmt_bps(avg(ul)))
-    if lat: pf("Avg Latency (10s)",f"{avg(lat):.1f} ms")
-    pf("Total Samples",len(dl))
-    outages=sg(h,"outages") or []
-    if outages:
-        print(f"  {C.BCYN}│{C.RST}"); print(f"  {C.BCYN}│{C.RST}  {C.BOLD}Recent outages:{C.RST}")
-        for i,o in enumerate(outages[-8:]):
-            cause=sg(o,"cause",default="?"); dur=sg(o,"duration_ns") or sg(o,"durationNs") or 0
-            print(f"  {C.BCYN}│{C.RST}    {C.DIM}#{i+1}{C.RST}  {C.YEL}{cause}{C.RST}  {C.CYN}{float(dur)/1e9:.1f}s{C.RST}")
-    sec_end()
-
 def display_location(data):
     # Try getLocation endpoint first
     loc=sg(data,"get_location") or sg(data,"getLocation") or {}
@@ -755,7 +726,7 @@ def display_router_status(data):
         pf("Health", f"{C.BGRN}HEALTHY{C.RST}")
     pf("Uptime", fmt_up(uptime))
     for label, key in (("Ping to Dish","dish_ping_latency_ms"),
-                       ("Ping to PoP","pop_ping_latency_ms"),
+                       ("Ping to Point of Presence","pop_ping_latency_ms"),
                        ("Ping (WAN)","ping_latency_ms")):
         v=sg(s,key)
         if v is not None:
@@ -1033,7 +1004,7 @@ def main_menu(dish_conn, router_conn):
     mo("3","GPS & Location","lat/lon, altitude, maps link","🗺")
     mo("4","Obstruction Map","visual obstruction grid","🗺")
     mo("5","History","power draw, outages, events","📈")
-    mo("6","Dish Config","snow melt, power save, updates","⚙")
+    mo("6","Dish Config","configuration snapshot (read-only)","⚙")
     mo("7","Diagnostics","internal diagnostics","🩺")
     print(); hr("═",C.BCYN); print(f"  {C.BOLD}{C.BWHT} ROUTER{C.RST}"); hr("─",C.DIM)
     mo("8","Router Status","uptime, pings, device info","🛜")

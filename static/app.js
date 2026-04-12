@@ -388,7 +388,6 @@
     // Alignment sky view
     renderAlignment(s);
 
-    // Connected routers (REMOVABLE)
     renderConnectedRouters(s);
 
     // Device info
@@ -403,11 +402,6 @@
     ];
     renderKV($("#kv-device"), deviceEntries);
   };
-
-  // ═══════════ REMOVABLE: Connected Routers card rendering ═══════════
-  // To remove: delete this block (down to the matching END marker), plus the
-  // `renderConnectedRouters(s)` call in renderStatus(), and the matching
-  // markers in index.html + style.css.
 
   const diffSecsFromNs = (ns) => {
     const secs = Number(ns) / 1e9;
@@ -485,8 +479,6 @@
       list.appendChild(row);
     }
   };
-
-  // ═══════════ END REMOVABLE ═══════════
 
   // ───── Router tab ─────
 
@@ -691,19 +683,20 @@
     try {
       const resp = await fetch("/api/router/wifi_qr", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "image/svg+xml",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ssid }),
       });
+      const body = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${resp.status}`);
       }
-      const svgText = await resp.text();
-      canvas.replaceChildren();
-      canvas.insertAdjacentHTML("beforeend", svgText);
+      if (!body.svg_b64) throw new Error("empty response");
+      const img = el("img", {
+        src: `data:image/svg+xml;base64,${body.svg_b64}`,
+        alt: "QR code",
+        class: "qr-img",
+      });
+      canvas.replaceChildren(img);
     } catch (err) {
       canvas.replaceChildren(
         el("div", { class: "muted small", text: err.message || String(err) })
@@ -1748,7 +1741,10 @@
       }
 
       $("#cfg-ps-start").textContent = fmtHHMM(sLocal);
-      $("#cfg-ps-end").textContent = fmtHHMM(sLocal + d);
+      const endMin = sLocal + d;
+      $("#cfg-ps-end").textContent = endMin >= 1440
+        ? `${fmtHHMM(endMin)} (+1d)`
+        : fmtHHMM(endMin);
       $("#cfg-ps-duration").textContent = fmtDurationMin(d);
       $("#cfg-ps-state").textContent = i18n.t("config.ps.enabled_label");
     } else {

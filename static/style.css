@@ -598,9 +598,6 @@ main {
   letter-spacing: 0.04em;
 }
 
-/* ═══════════ REMOVABLE: Connected Routers + WiFi Clients cards ═══════════
-   To remove both cards entirely, delete everything between these markers. */
-
 .device-list {
   display: flex;
   flex-direction: column;
@@ -736,8 +733,6 @@ main {
   font-size: 11px;
   opacity: 0.75;
 }
-
-/* ═══════════ END REMOVABLE ═══════════ */
 
 /* ───── Router tab cards ───── */
 
@@ -949,7 +944,8 @@ main {
   min-height: 240px;
 }
 
-.qr-canvas svg {
+.qr-canvas svg,
+.qr-canvas .qr-img {
   display: block;
   width: 100%;
   max-width: 260px;
@@ -1572,8 +1568,7 @@ code {
   border: 1px solid rgba(92, 117, 150, 0.3);
 }
 
-.pill[data-state="OKAY"],
-.pill[data-state="ok"] {
+.pill[data-state="OKAY"] {
   background: rgba(92, 223, 143, 0.12);
   color: var(--green);
   border-color: rgba(92, 223, 143, 0.35);
@@ -1875,17 +1870,6 @@ code {
   background: rgba(255, 107, 107, 0.18);
   box-shadow: 0 0 20px rgba(255, 107, 107, 0.25);
   border-color: var(--red);
-}
-
-.btn-warn {
-  border-color: var(--yellow);
-  color: var(--yellow);
-  background: rgba(255, 195, 94, 0.08);
-}
-
-.btn-warn:hover {
-  background: rgba(255, 195, 94, 0.18);
-  border-color: var(--yellow);
 }
 
 .btn-ghost {

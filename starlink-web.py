@@ -9,7 +9,7 @@ Run:
 """
 
 import os, sys, json, io, contextlib, argparse, importlib.util, subprocess, venv, shutil, threading, mimetypes
-import base64, hashlib, datetime
+import base64, hashlib, datetime, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -57,19 +57,26 @@ DISH_ADDR = MINI.DISH_ADDR
 ROUTER_ADDR = "192.168.1.1:9000"
 
 # Extend the permitted gRPC keys with additional read-only endpoints used by
-# the dish and the Starlink router.
+# the dish and the Starlink router. Listed here so the web layer documents its
+# own contract instead of depending on whatever happens to be whitelisted in
+# starlink-mini.py's PERMITTED_KEYS set.
 DishClient.PERMITTED_KEYS = frozenset(
     DishClient.PERMITTED_KEYS
     | {
-        # Dish / router reads
+        # Dish reads (camelCase forms used by DISH_KEY_MAP)
+        "getStatus",
+        "getDeviceInfo",
+        "getLocation",
+        "getDiagnostics",
+        "dishGetConfig",
+        "dishGetObstructionMap",
+        "getHistory",
+        # Router reads
         "wifi_get_clients",
         "wifi_get_config",
-        "wifi_guest_info",
         "wifi_self_test",
-        "wifi_get_client_history",
         "get_network_interfaces",
         "get_radio_stats",
-        "get_ping",
     }
 )
 
@@ -103,33 +110,38 @@ class DishProxy:
         and UNIMPLEMENTED, which the underlying DishClient silently swallows)."""
         import grpc
         from google.protobuf import json_format
+        # Hold the lock only long enough to snapshot the current DishClient so
+        # the blocking gRPC call below doesn't serialize every concurrent
+        # request to this proxy. reconnect() swaps self.client under the lock,
+        # so the snapshot stays valid for the duration of this call.
         with self.lock:
             if not self.connected:
                 return None, "not connected"
             if key not in DishClient.PERMITTED_KEYS:
                 return None, f"request key '{key}' not permitted"
+            client = self.client
+        try:
+            path, req_tn, resp_tn = client._find_handle()
+            rc = client._get_msg_class(req_tn)
+            rsc = client._get_msg_class(resp_tn)
+            if not rc or not rsc:
+                return None, "cannot resolve protobuf types"
+            req = rc()
             try:
-                path, req_tn, resp_tn = self.client._find_handle()
-                rc = self.client._get_msg_class(req_tn)
-                rsc = self.client._get_msg_class(resp_tn)
-                if not rc or not rsc:
-                    return None, "cannot resolve protobuf types"
-                req = rc()
-                try:
-                    json_format.Parse(json.dumps({key: body or {}}), req, ignore_unknown_fields=False)
-                except Exception as e:
-                    return None, f"invalid request: {e}"
-                resp = self.client.channel.unary_unary(
-                    path,
-                    request_serializer=lambda mm: mm.SerializeToString(),
-                    response_deserializer=rsc.FromString,
-                )(req, timeout=12)
-                return json_format.MessageToDict(resp, preserving_proto_field_name=True), ""
-            except grpc.RpcError as e:
-                code = e.code().name if hasattr(e.code(), "name") else str(e.code())
-                return None, f"{code}: {(e.details() or '').strip()}"
+                json_format.Parse(json.dumps({key: body or {}}), req, ignore_unknown_fields=False)
             except Exception as e:
-                return None, str(e)
+                return None, f"invalid request: {e}"
+            resp = client.channel.unary_unary(
+                path,
+                request_serializer=lambda mm: mm.SerializeToString(),
+                response_deserializer=rsc.FromString,
+            )(req, timeout=12)
+            return json_format.MessageToDict(resp, preserving_proto_field_name=True), ""
+        except grpc.RpcError as e:
+            code = e.code().name if hasattr(e.code(), "name") else str(e.code())
+            return None, f"{code}: {(e.details() or '').strip()}"
+        except Exception as e:
+            return None, str(e)
 
     def services(self):
         with self.lock:
@@ -142,7 +154,6 @@ class DishProxy:
 
 DISH_PROXY = DishProxy(DISH_ADDR)
 ROUTER_PROXY = DishProxy(ROUTER_ADDR)
-PROXY = DISH_PROXY  # backward-compat alias for existing references
 
 
 def _json_response(handler, code, payload):
@@ -172,6 +183,10 @@ VAULT_CHECK_PLAINTEXT = b"starlink-mini-vault-v1"
 VAULT_KDF_ITERATIONS = 600_000
 _vault_lock = threading.Lock()
 _vault_key = None  # 32-byte AES key, set after successful unlock
+# Per-IP consecutive failure counter for /api/vault/unlock. Bounded so a
+# flood of spoofed source addresses can't grow it unbounded.
+_vault_unlock_fails = {}
+_VAULT_UNLOCK_FAILS_MAX = 256
 
 
 def _b64e(b):
@@ -339,6 +354,23 @@ def _vault_delete_entry(ssid):
         return True, ""
 
 
+def _vault_unlock_delay(ip):
+    """Return how long to sleep before responding to a failed unlock from
+    this IP, and bump the failure counter. Caps the dict size so spoofed
+    source addresses can't grow it without bound."""
+    with _vault_lock:
+        fails = _vault_unlock_fails.get(ip, 0)
+        if ip not in _vault_unlock_fails and len(_vault_unlock_fails) >= _VAULT_UNLOCK_FAILS_MAX:
+            _vault_unlock_fails.clear()
+        _vault_unlock_fails[ip] = fails + 1
+    return min(5.0, 0.25 * (2 ** fails))
+
+
+def _vault_unlock_reset(ip):
+    with _vault_lock:
+        _vault_unlock_fails.pop(ip, None)
+
+
 def _vault_reset():
     global _vault_key
     with _vault_lock:
@@ -456,24 +488,15 @@ DISH_KEY_MAP = {
     "/api/config": "dishGetConfig",
     "/api/obstruction": "dishGetObstructionMap",
     "/api/history": "getHistory",
-    "/api/transceiver/status": "transceiver_get_status",
-    "/api/transceiver/telemetry": "transceiver_get_telemetry",
-    "/api/clients": "wifi_get_clients",  # legacy — now best hit via router
 }
 
 ROUTER_KEY_MAP = {
     "/api/router/status": "get_status",
-    "/api/router/device": "get_device_info",
-    "/api/router/diagnostics": "get_diagnostics",
-    "/api/router/history": "get_history",
     "/api/router/clients": "wifi_get_clients",
-    "/api/router/client_history": "wifi_get_client_history",
     "/api/router/config": "wifi_get_config",
-    "/api/router/guest": "wifi_guest_info",
     "/api/router/self_test": "wifi_self_test",
     "/api/router/network_interfaces": "get_network_interfaces",
     "/api/router/radio_stats": "get_radio_stats",
-    "/api/router/ping": "get_ping",
 }
 
 
@@ -525,7 +548,7 @@ def _api_get(path):
         with _vault_lock:
             if _vault_key is None:
                 return 401, {"error": "locked"}
-        return 200, {"ssids": _vault_list_ssids()}
+            return 200, {"ssids": _vault_list_ssids()}
 
     if path == "/api/services":
         if not DISH_PROXY.connected:
@@ -549,7 +572,7 @@ def _api_get(path):
     return 404, {"error": "not found"}
 
 
-def _api_post(path, body):
+def _api_post(path, body, client_ip=""):
     global _vault_key
 
     if path == "/api/reconnect":
@@ -578,9 +601,11 @@ def _api_post(path, body):
         password = ((body or {}).get("password") or "")
         key = _vault_unlock(password)
         if key is None:
+            time.sleep(_vault_unlock_delay(client_ip))
             return 401, {"error": "wrong password"}
         with _vault_lock:
             _vault_key = key
+        _vault_unlock_reset(client_ip)
         return 200, {"unlocked": True}
 
     if path == "/api/vault/lock":
@@ -639,7 +664,7 @@ def _api_post(path, body):
         payload = (body or {}).get("payload") or {}
         if not key:
             return 400, {"error": "key required"}
-        data, err = PROXY.request(key, payload)
+        data, err = DISH_PROXY.request(key, payload)
         if data is None:
             return 502, {"error": "request failed", "detail": err}
         return 200, {"data": data}
@@ -716,13 +741,9 @@ class Handler(BaseHTTPRequestHandler):
             lineclass=None,
             omitsize=True,
         )
-        svg = buf.getvalue()
-        self.send_response(200)
-        self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
-        self.send_header("Content-Length", str(len(svg)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(svg)
+        # Return the SVG base64-encoded so the browser can render it via an
+        # <img src="data:..."> tag. Avoids parsing server output as HTML.
+        _json_response(self, 200, {"svg_b64": _b64e(buf.getvalue())})
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -762,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/router/wifi_qr":
             self._serve_wifi_qr(body)
             return
-        code, payload = _api_post(url.path, body)
+        code, payload = _api_post(url.path, body, client_ip=self.client_address[0] if self.client_address else "")
         _json_response(self, code, payload)
 
 
