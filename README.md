@@ -1,227 +1,219 @@
 # Starlink Mini · Control Center
 
-A fullscreen TUI control center for Starlink Mini dishes. Access real-time telemetry, diagnostics, configuration, and control via the gRPC API.
+A browser dashboard for Starlink Mini dishes. Connects to the dish and
+Starlink router over the local gRPC API and serves a live control center
+at `http://127.0.0.1:8800`.
 
-## Installation
+## Quick start
 
 ```bash
-chmod +x starlink-mini.py
-./starlink-mini.py
+chmod +x starlink-web.py
+./starlink-web.py
 ```
 
+Then open <http://127.0.0.1:8800> in a browser.
+
 The script automatically:
-1. Creates a Python virtual environment
-2. Installs dependencies (`grpcio`, `grpcio-reflection`, `protobuf`)
-3. Launches in the venv
 
-## Features
+1. Creates a Python virtual environment in `./venv`
+2. Installs dependencies (`grpcio`, `grpcio-reflection`, `protobuf`,
+   `segno`, `cryptography`)
+3. Re-executes inside the venv
 
-- **Fullscreen TUI** — Redrawing display (like `htop`), not scrolling text
-- **19 Menu Options** — Information, configuration, actions, and advanced tools
-- **Real-time Telemetry** — Dish status, signal, GPS, obstruction, temps
-- **GPS Location** — Coordinates, altitude, speed, accuracy
-- **Live Monitor** — 3-second refresh dashboard
-- **Data Export** — Full JSON dump of all API responses
-- **Raw gRPC** — Send custom JSON requests
-- **Auto Setup** — No manual dependency installation needed
-- **Fullscreen Pagination** — Long output splits across screens with "Page 1/N" navigation
+## CLI flags
 
-## Menu Options
+```
+./starlink-web.py --host 0.0.0.0 --port 8800
+```
 
-### Information (1–5)
-- **[1] Device Info** — Hardware version, software version, serial, IDs
-- **[2] Dish Status** — Uptime, signal, GPS lock, satellites, pointing angles, obstruction stats, temperature alerts
-- **[3] Obstruction Map** — Visual grid showing obstructed sky regions
-- **[4] Location** — GPS latitude, longitude, altitude, speed, accuracy
-- **[5] Diagnostics** — Network performance, alignment, system health
+- `--host` — bind address (default `127.0.0.1`)
+- `--port` — TCP port (default `8800`)
 
-### Configuration (6–10)
-- **[6] View Dish Config** — Current snow melt, power save, WiFi settings
-- **[7] Set Snow Melt Mode** — ON / AUTO / OFF
-- **[8] Set Power Save** — Configure sleep schedule
-- **[9] Set Dish Level** — Tilt mode control
-- **[10] Set WiFi** — Network SSID and password
+Use `--host 0.0.0.0` to expose the dashboard to other machines on your
+LAN. There is no auth on the HTTP endpoint — only do this on trusted
+networks.
 
-### Actions (11–12)
-- **[11] Reboot Dish** — Restart the dish
-- **[12] Reboot WiFi** — Restart WiFi module
+## Tabs
 
-### Advanced (13–19)
-- **[13] Ping Dish** — Quick connectivity test
-- **[14] List gRPC Methods** — All available API services
-- **[15] List Request Fields** — All API request types
-- **[16] Raw gRPC Request** — Send custom `{"method": {}}` JSON
-- **[17] Export All Data** — Save all API responses to JSON files
-- **[18] Continuous Monitor** — Live status dashboard (3s refresh)
-- **[19] Reconnect** — Re-establish gRPC connection
+### Telemetry
 
-**[q] Quit** — Exit to terminal
+Live dish state, refreshed on a timer (toggle with **Live refresh**):
 
-## Display
+- **Throughput** — download / upload with animated bars, latency, drop
+  rate, SNR, uptime
+- **Dish Status** — alerts, pointing, obstruction fraction, heating,
+  ready states
+- **GPS & Location** — coordinates, altitude, speed, accuracy, direct
+  link to Google Maps
+- **Alignment** — sky view SVG showing current boresight vs. desired
+  target plus the alignment filter state (CONVERGED, INITIALIZING…)
+- **Signal & Ready States** — SCP / L1L2 / XPHY / AAP / RF
+- **Obstruction Map** — SVG heatmap with clear / partial / blocked
+  legend, min elevation, max theta
+- **Device Info** — hardware / software version, serial, country,
+  boot count
+- **Connected Routers** — routers the dish reports as paired
 
-### Colors
-- 🟢 **Green** — OK, enabled, true, yes
-- 🔴 **Red** — Error, disabled, false, no
-- 🟡 **Yellow** — Warning, caution
-- 🔵 **Cyan** — Values, data
+### History
 
-### Pagination
-- Long content automatically splits across pages
-- **Enter** — Next page
-- **q** — Return to menu
-- Shows "Page 1/N" at bottom
+- **Power Draw** — current watts plus sparkline, min / max / avg, sample
+  window
+- **Outages** — recent outages with duration and cause
+- **Event Log** — timestamped events reported by the dish
 
-### Formatting
-- "NaN" strings (from API) display as "N/A"
-- Throughput in Mbps/Gbps
-- Angles in degrees
-- Time in days/hours/minutes/seconds
-- Boolean as Yes/No
+### Router
+
+Everything the Starlink router exposes on `192.168.1.1:9000`:
+
+- **Router Status** — uptime, connectivity, firmware
+- **WiFi Clients** — connected device list with signal, rate, vendor
+- **WiFi Networks** — SSID list with actions:
+  - **Show password** — reveal a password you previously saved in the
+    vault (or that the router is willing to return)
+  - **Show QR** — render a Wi-Fi QR code (`WIFI:T:WPA;S:...;P:...;;`)
+    that phones can scan to join
+  - **Save password** — store a masked-but-known password into the
+    encrypted vault so it can be re-shown / re-QR'd later
+  - **Forget** — drop the saved password from the vault
+- **Radio Stats** — per-radio channel, noise floor, tx power
+- **Self-test** — live self-test results
+- **Network Interfaces** — every iface with IP, MAC, MTU, rx/tx counters
+
+### Configuration
+
+Read-only mirror of the dish configuration. The LAN gRPC endpoint
+rejects writes with `PERMISSION_DENIED` — change settings from the
+Starlink mobile app.
+
+- **Snow Melt** mode (ON / AUTO / OFF)
+- **Power Save Schedule** with a 24-hour timeline showing the active
+  sleep window and "now" marker
+- **Dish Level** mode
+- **Software Updates** reboot hour
+- **Location Reporting** enabled / disabled
+- **Asset Class** (service tier identifier)
+- **Raw Configuration** — full JSON in an expandable block
+
+### Actions
+
+- **Reboot Dish** — confirmation-gated, connectivity drops ~90 s
+- **Ping Test** — ICMP echo to `192.168.100.1`, 5 packets
+- **Export Full Dump** — downloads every telemetry/config endpoint as
+  a single JSON file
+
+### Advanced
+
+- **Raw gRPC Request** — send any whitelisted request key with a JSON
+  payload and inspect the raw response
+- **gRPC Services** — list every discovered service via reflection
+- **Request Fields** — list every request type with its fields
+- **Diagnostics** — full `getDiagnostics` dump
+
+Only read-only keys are whitelisted — writes are blocked server-side.
+
+## Wi-Fi password vault
+
+Saved Wi-Fi passwords are stored in `./.starlink-vault.json`, encrypted
+with AES-GCM using a key derived from a master password (scrypt).
+
+- The first time you open the Wi-Fi tools you'll be asked to set a
+  master password. This initialises the vault.
+- Subsequent sessions prompt for the master password to unlock the
+  vault; locked state means the dashboard can't read or write
+  passwords, and QR codes are refused with `401 locked`.
+- The 🔒 button in the header re-locks the vault without restarting
+  the server.
+- **Forgot it? Reset vault** wipes `.starlink-vault.json` entirely
+  (every saved password is lost).
+
+The file has mode `0600`. Anyone with read access to the file still
+needs the master password to decrypt entries.
+
+## Languages
+
+The UI ships with English (🇬🇧) and Norwegian Bokmål (🇳🇴). Use the
+language dropdown in the header to switch; the choice persists in
+`localStorage`.
 
 ## Requirements
 
-- **Python 3.7+**
-- **Linux** (Manjaro, Ubuntu, Debian, etc.)
-- **Starlink Mini dish** at `192.168.100.1:9200`
-- **Network access** to dish (local network)
+- **Python 3.9+**
+- **Linux** (tested on Manjaro)
+- **Starlink Mini dish** reachable at `192.168.100.1:9200`
+- **Starlink router** reachable at `192.168.1.1:9000` (optional — the
+  Router tab will be empty without it)
+- A modern browser (Chrome, Firefox, Safari) — the UI uses `<dialog>`,
+  `fetch`, and modern CSS
 
-Dependencies auto-installed:
-- `grpcio` — gRPC client
-- `grpcio-reflection` — Service discovery
-- `protobuf` — Message serialization
+Dependencies are auto-installed into `./venv`:
 
-## API Connection
+- `grpcio`, `grpcio-reflection`, `protobuf` — gRPC client + reflection
+- `segno` — Wi-Fi QR code generation
+- `cryptography` — AES-GCM + scrypt for the vault
 
-The script connects to your Starlink dish's gRPC API on the local network:
+## Connection addresses
 
-**Address:** `192.168.100.1:9200`  
-**Auth:** None (local network is unauthenticated)  
-**Discovery:** Automatic (uses gRPC reflection)
-
-To change the address, edit line 71:
-```python
-DISH_ADDR = "192.168.100.1:9200"
+```
+Dish    192.168.100.1:9200   (gRPC, unauthenticated)
+Router  192.168.1.1:9000     (gRPC, unauthenticated)
+Web UI  127.0.0.1:8800       (HTTP, unauthenticated)
 ```
 
-## Data Types
-
-The script displays data from real API responses:
-
-### Device Info
-- ID, hardware version, software version, serial
-- Country code, UTC offset, boot count
-- Build ID, generation number
-
-### Dish Status
-- Uptime, disablement code, mobility class
-- Downlink/uplink throughput, latency, drop rate
-- Ethernet speed, software update state
-- GPS: valid, satellites, coordinates
-- Pointing: azimuth, elevation, tilt angle
-- Obstruction: fraction, valid samples, patches
-- Alerts: heating, other warnings
-- Ready states: scp, l1l2, xphy, aap, rf
-- APS/PLC/UPSU stats (if available)
-
-### Location (GPS)
-- Latitude, longitude, altitude
-- Source, accuracy (±meters)
-- Horizontal/vertical speed
-- Google Maps link
-
-### Diagnostics
-- Alignment stats: desired vs actual pointing
-- Hardware self-test status
-- Disablement code
-- Software/hardware versions
-
-### Obstruction Map
-- 16×16 visual grid (█ = obstructed)
-- Signal-to-noise ratio heatmap
-- Reference frame info
-- Min elevation, max theta
-
-### History
-- 72-hour network history (hourly samples)
-- Downlink/uplink throughput trends
-- Ping latency & drop rate history
-- Recent outages with duration
-
-### Configuration
-- Snow melt mode (always on / auto / off)
-- Power save: start time, duration
-- Software update reboot hour
-- Level dish mode
-- Location requests enabled/disabled
-
-## Keyboard
-
-- **Enter** — Confirm, navigate pages, continue
-- **q** — Return to menu (from pages or monitor)
-- **Ctrl+C** — Interrupt (live monitor exits cleanly)
+Discovery on both dish and router is automatic via gRPC reflection.
+To change the dish address, edit `DISH_ADDR` in `starlink-mini.py` (it
+is re-imported by `starlink-web.py`). The router address lives at the
+top of `starlink-web.py` as `ROUTER_ADDR`.
 
 ## Troubleshooting
 
-**"Connection timed out"**
-- Verify dish is powered on
-- Verify network connectivity: `ping 192.168.100.1`
-- Try option [21] to reconnect
+**Dish shows "not connected"**
+- Check `ping 192.168.100.1`
+- Click the ↻ reconnect button in the header
+- The `Dish` connection dot in the header shows live state
 
-**"No gRPC services found"**
-- Dish API may be unresponsive
-- Reboot dish: option [13]
-- Check dish is on the same local network
+**Router tab is empty**
+- Router isn't reachable at `192.168.1.1:9000`
+- Click the ↻ reconnect button next to **Router** in the header
 
-**"Invalid request" / "has no field named..."**
-- Your hardware version may not support that endpoint
-- Check available methods: option [16]
-- Try option [18] Raw gRPC to explore
+**"PERMISSION_DENIED" on a config change**
+- Expected — the LAN API is read-only for writes. Use the Starlink
+  mobile app instead.
 
-**Display is garbled**
-- Terminal width must be ≥80 columns
-- Try resizing: `resize` or manually widen window
-- Some terminals don't support ANSI codes — try `xterm`, `gnome-terminal`, or `konsole`
+**Wi-Fi QR won't scan**
+- Make sure the vault is unlocked and the SSID actually has a password
+  saved (Show QR needs a real password, not the masked placeholder)
+- Verify the modal shows the SSID you expect
 
-**Option X doesn't work**
-- Some features (Stow/Unstow) require specific hardware
-- Check option [16] to see if the method exists on your dish
-- Not all Starlink Mini variants support all endpoints
+**Vault says "locked"**
+- Click 🔓 in the header (or reopen a Wi-Fi action) and enter the
+  master password
 
-## Keyboard Shortcuts
-
-- **[q]** at menu — Quit
-- **[q]** on any page — Return to menu
-- **[Enter]** on pages — Next page / Continue
-- **[Ctrl+C]** in live monitor — Stop and return to menu
+**Port already in use**
+- Pass `--port 8801` (or any free port)
 
 ## Files
 
 ```
-starlink-mini.py    Main script (900+ lines)
-README.md           This file
+starlink-web.py           HTTP server + gRPC proxy
+starlink-mini.py          gRPC client library (imported by the web server)
+static/index.html         Dashboard markup
+static/app.js             Dashboard logic
+static/style.css          Dashboard styles
+static/i18n.js            en / nb translations
+.starlink-vault.json      Encrypted Wi-Fi password vault (gitignored)
 ```
-
-Optional companion scripts (separate):
-- `starlink_export_all.py` — Bulk export all API data
-- `starlink_discover.py` — Map all available methods
-- `starlink_report.py` — Generate text reports
 
 ## Notes
 
-- **No internet required** — All communication is local
-- **No authentication** — Local gRPC API is open
-- **Stateless** — Script doesn't store any configuration
-- **Read-mostly** — Some operations (config changes) send commands
-- **Safe** — Operations ask for confirmation before running
-
-## Version
-
-- **Script:** v1.0
-- **API Version:** 42 (Starlink Mini)
-- **Tested On:** Manjaro Linux, Python 3.9+
-- **Updated:** 2026-04-10
+- **No internet required** — everything is local LAN
+- **No authentication** on the HTTP endpoint — bind to `127.0.0.1`
+  unless you trust your network
+- **Read-mostly** — write paths (reboot, raw gRPC) exist but the dish
+  rejects most config writes
+- **Stateless server** — the only persistent state is the Wi-Fi vault
 
 ---
 
-**Usage:** `./starlink-mini.py`  
-**Quit:** Press `q` or Ctrl+C
+**Run:** `./starlink-web.py`
+**Open:** <http://127.0.0.1:8800>
+**Stop:** `Ctrl+C` in the terminal
