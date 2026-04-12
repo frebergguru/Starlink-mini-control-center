@@ -116,6 +116,7 @@
     "kv.active_alerts": "Active alerts",
 
     "maps.open": "Open in Google Maps ↗",
+    "maps.open_osm": "Open in OpenStreetMap ↗",
     "align.sky_view": "Dish sky view",
     "align.compass_view": "Dish compass view",
     "align.current_boresight": "Current boresight",
@@ -473,6 +474,7 @@
     "kv.active_alerts": "Aktive varsler",
 
     "maps.open": "Åpne i Google Maps ↗",
+    "maps.open_osm": "Åpne i OpenStreetMap ↗",
     "align.sky_view": "Himmelvisning for antenne",
     "align.compass_view": "Kompassvisning for antenne",
     "align.current_boresight": "Nåværende siktelinje",

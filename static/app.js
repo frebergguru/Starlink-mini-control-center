@@ -1499,6 +1499,7 @@
     if (!loc || typeof loc !== "object" || !loc.lla) {
       lastLocation = null;
       $("#maps-link").classList.add("hidden");
+      $("#osm-link").classList.add("hidden");
       return;
     }
     lastLocation = loc;
@@ -1513,11 +1514,15 @@
       [i18n.t("kv.vertical_speed"), loc.vertical_speed_mps != null ? `${nfix(loc.vertical_speed_mps, 2)} ${i18n.t("units.mps")}` : null],
     ]);
     const link = $("#maps-link");
+    const osmLink = $("#osm-link");
     if (lat != null && lon != null) {
       link.href = `https://maps.google.com/?q=${lat},${lon}`;
       link.classList.remove("hidden");
+      osmLink.href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
+      osmLink.classList.remove("hidden");
     } else {
       link.classList.add("hidden");
+      osmLink.classList.add("hidden");
     }
   };
 
