@@ -169,9 +169,30 @@ def _scrub(obj):
     return obj
 
 
+_AUTH_NODES = (
+    ("auth_wpa3", "WPA"),
+    ("auth_wpa2", "WPA"),
+    ("auth_wpa", "WPA"),
+    ("auth_wep", "WEP"),
+)
+
+
+def _is_masked_psk(v):
+    """The router returns a bullet-filled placeholder instead of the real
+    password on current firmware. Detect that so the client can prompt the
+    user to enter the real value manually."""
+    if not isinstance(v, str):
+        return True
+    s = v.strip()
+    if not s or s == "[REDACTED]":
+        return True
+    return all(c == "\u2022" for c in s)
+
+
 def _extract_wifi_secrets(data):
-    """Pull (ssid, psk, auth) tuples from a wifi_get_config response. Skips
-    networks that have no usable passphrase (open networks, empty strings)."""
+    """Walk a wifi_get_config response and return one dict per configured
+    network with {ssid, psk, auth, guest, masked}. `masked` is True when the
+    router refused to share the real passphrase, in which case psk is None."""
     root = data or {}
     root = root.get("wifi_get_config") or root.get("wifiGetConfig") or root
     cfg = root.get("wifi_config") or root.get("wifiConfig") or root
@@ -184,13 +205,31 @@ def _extract_wifi_secrets(data):
         for bss in (net.get("basic_service_sets") or []):
             if bss.get("ssid") and not ssid:
                 ssid = bss.get("ssid")
-            if bss.get("basic_service_set_psk") and not psk:
-                psk = bss.get("basic_service_set_psk")
-            cand_auth = bss.get("auth_type") or bss.get("authType")
-            if cand_auth and not auth:
-                auth = cand_auth
-        if ssid and psk:
-            out.append({"ssid": ssid, "psk": psk, "auth": auth or "WPA2", "guest": is_guest})
+            if psk is not None:
+                continue
+            for key, label in _AUTH_NODES:
+                node = bss.get(key)
+                if isinstance(node, dict):
+                    cand = node.get("password") or node.get("psk") or node.get("passphrase")
+                    if cand:
+                        psk = cand
+                        auth = label
+                        break
+            if psk is None:
+                legacy = bss.get("basic_service_set_psk") or bss.get("psk") or bss.get("passphrase")
+                if legacy:
+                    psk = legacy
+                    auth = "WPA"
+        if not ssid:
+            continue
+        masked = _is_masked_psk(psk) if psk is not None else True
+        out.append({
+            "ssid": ssid,
+            "psk": None if masked else psk,
+            "auth": auth or "WPA",
+            "guest": is_guest,
+            "masked": masked,
+        })
     return out
 
 
@@ -282,7 +321,7 @@ def _api_get(path):
         data, err = ROUTER_PROXY.request("wifi_get_config")
         if data is None:
             return 502, {"error": "request failed", "detail": err or "no data"}
-        return 200, {"networks": _extract_wifi_secrets(data), "_raw": data}
+        return 200, {"networks": _extract_wifi_secrets(data)}
 
     if path == "/api/services":
         if not DISH_PROXY.connected:
@@ -368,30 +407,22 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return None
 
-    def _serve_wifi_qr(self, url):
-        from urllib.parse import parse_qs
-        qs = parse_qs(url.query or "")
-        target_ssid = (qs.get("ssid") or [""])[0]
-        if not target_ssid:
-            _json_response(self, 400, {"error": "ssid query parameter required"})
+    def _serve_wifi_qr(self, body):
+        ssid = (body or {}).get("ssid")
+        psk = (body or {}).get("psk")
+        auth = (body or {}).get("auth") or "WPA"
+        if not ssid:
+            _json_response(self, 400, {"error": "ssid required"})
             return
-        if not ROUTER_PROXY.connected:
-            _json_response(self, 503, {"error": "not connected", "message": ROUTER_PROXY.connect_msg})
-            return
-        data, err = ROUTER_PROXY.request("wifi_get_config")
-        if data is None:
-            _json_response(self, 502, {"error": "request failed", "detail": err or "no data"})
-            return
-        match = next((n for n in _extract_wifi_secrets(data) if n["ssid"] == target_ssid), None)
-        if not match:
-            _json_response(self, 404, {"error": "ssid not found"})
+        if not psk:
+            _json_response(self, 400, {"error": "psk required"})
             return
         try:
             import segno
         except Exception as e:
             _json_response(self, 500, {"error": f"segno unavailable: {e}"})
             return
-        uri = _wifi_uri(match["ssid"], match["psk"], match.get("auth"), hidden=False)
+        uri = _wifi_uri(ssid, psk, auth, hidden=False)
         qr = segno.make(uri, error="m")
         buf = io.BytesIO()
         qr.save(buf, kind="svg", scale=10, border=2, dark="#0b0d12", light="#ffffff")
@@ -406,9 +437,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         path = url.path
-        if path == "/api/router/wifi_qr":
-            self._serve_wifi_qr(url)
-            return
         if path.startswith("/api/"):
             code, payload = _api_get(path)
             _json_response(self, code, payload)
@@ -440,6 +468,9 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read_json()
         if body is None:
             _json_response(self, 400, {"error": "invalid or oversized JSON"})
+            return
+        if url.path == "/api/router/wifi_qr":
+            self._serve_wifi_qr(body)
             return
         code, payload = _api_post(url.path, body)
         _json_response(self, code, payload)

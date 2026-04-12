@@ -871,6 +871,54 @@ main {
   padding: 3px 8px;
 }
 
+.wifi-net-pass-form {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 195, 94, 0.08);
+  border: 1px solid rgba(255, 195, 94, 0.25);
+  border-radius: 8px;
+}
+
+.wifi-net-pass-form[data-visible="true"] {
+  display: flex;
+}
+
+.wifi-net-pass-note {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+
+.wifi-net-pass-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.wifi-net-pass-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  background: rgba(5, 10, 18, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.wifi-net-pass-input:focus {
+  outline: none;
+  border-color: rgba(86, 204, 242, 0.65);
+}
+
+.wifi-net-pass-form .btn {
+  font-size: 11px;
+  padding: 5px 12px;
+}
+
 /* Wi-Fi QR code modal */
 
 .qr-modal::backdrop {

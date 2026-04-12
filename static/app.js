@@ -619,6 +619,9 @@
     }
   };
 
+  // Per-SSID metadata coming from the router (auth type + masked flag).
+  // The actual passphrase is kept in localStorage because current Starlink
+  // firmware only returns "•••••" over the LAN gRPC API.
   const fetchWifiSecrets = async () => {
     if (wifiSecretsCache) return wifiSecretsCache;
     if (wifiSecretsPromise) return wifiSecretsPromise;
@@ -640,17 +643,46 @@
     return wifiSecretsPromise;
   };
 
-  const openWifiQr = async (ssid) => {
+  const wifiStorageKey = (ssid) => `starlink.wifi.${ssid}`;
+
+  const getStoredPassword = (ssid) => {
+    try { return localStorage.getItem(wifiStorageKey(ssid)); }
+    catch { return null; }
+  };
+
+  const setStoredPassword = (ssid, psk) => {
+    try { localStorage.setItem(wifiStorageKey(ssid), psk); } catch {}
+  };
+
+  const clearStoredPassword = (ssid) => {
+    try { localStorage.removeItem(wifiStorageKey(ssid)); } catch {}
+  };
+
+  const resolveWifiPassword = (ssid, secrets) => {
+    const stored = getStoredPassword(ssid);
+    if (stored) return { psk: stored, source: "local" };
+    const entry = secrets && secrets[ssid];
+    if (entry && entry.psk && !entry.masked) {
+      return { psk: entry.psk, source: "router" };
+    }
+    return { psk: null, source: null };
+  };
+
+  const openWifiQr = async (ssid, psk, auth) => {
     const modal = $("#qr-modal");
     const canvas = $("#qr-canvas");
     const ssidEl = $("#qr-ssid");
     ssidEl.textContent = ssid;
-    canvas.replaceChildren();
-    canvas.appendChild(el("div", { class: "muted small", text: "…" }));
+    canvas.replaceChildren(el("div", { class: "muted small", text: "…" }));
     modal.showModal();
     try {
-      const resp = await fetch(`/api/router/wifi_qr?ssid=${encodeURIComponent(ssid)}`, {
-        headers: { Accept: "image/svg+xml" },
+      const resp = await fetch("/api/router/wifi_qr", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "image/svg+xml",
+        },
+        body: JSON.stringify({ ssid, psk, auth: auth || "WPA" }),
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
@@ -660,71 +692,124 @@
       canvas.replaceChildren();
       canvas.insertAdjacentHTML("beforeend", svgText);
     } catch (err) {
-      canvas.replaceChildren();
-      canvas.appendChild(el("div", { class: "muted small", text: err.message || String(err) }));
+      canvas.replaceChildren(
+        el("div", { class: "muted small", text: err.message || String(err) })
+      );
       toast("error", i18n.t("wifi.qr_failed"), err.message || "");
     }
   };
 
   const buildWifiActions = (card, ssid) => {
+    const passValue = el("code", { class: "wifi-net-pass-value", text: "" });
+    const copyBtn = el("button", {
+      type: "button",
+      class: "btn btn-ghost wifi-net-pass-copy",
+      text: i18n.t("wifi.copy_password"),
+    });
     const passRow = el("div", { class: "wifi-net-pass", "data-visible": "false" }, [
       el("span", { class: "wifi-net-pass-label", text: i18n.t("wifi.password_label") }),
-      el("code", { class: "wifi-net-pass-value", text: "" }),
-      el("button", { type: "button", class: "btn btn-ghost wifi-net-pass-copy", text: i18n.t("wifi.copy_password") }),
+      passValue,
+      copyBtn,
     ]);
 
-    const showBtn = el("button", {
-      type: "button",
-      class: "btn btn-ghost",
-      text: i18n.t("wifi.show_password"),
+    const entryInput = el("input", {
+      type: "password",
+      class: "wifi-net-pass-input",
+      placeholder: i18n.t("wifi.password_placeholder"),
+      autocomplete: "off",
     });
-    const qrBtn = el("button", {
-      type: "button",
-      class: "btn btn-ghost",
-      text: i18n.t("wifi.show_qr"),
-    });
+    const saveBtn = el("button", { type: "button", class: "btn btn-primary", text: i18n.t("wifi.save") });
+    const noteEl = el("p", { class: "muted small wifi-net-pass-note", text: i18n.t("wifi.masked_note") });
+    const entryForm = el("form", { class: "wifi-net-pass-form", "data-visible": "false" }, [
+      noteEl,
+      el("div", { class: "wifi-net-pass-input-row" }, [entryInput, saveBtn]),
+    ]);
+
+    const showBtn = el("button", { type: "button", class: "btn btn-ghost", text: i18n.t("wifi.show_password") });
+    const qrBtn = el("button", { type: "button", class: "btn btn-ghost", text: i18n.t("wifi.show_qr") });
+    const forgetBtn = el("button", { type: "button", class: "btn btn-ghost wifi-net-forget", text: i18n.t("wifi.forget") });
+    forgetBtn.style.display = getStoredPassword(ssid) ? "" : "none";
+
+    const closePanels = () => {
+      passRow.dataset.visible = "false";
+      entryForm.dataset.visible = "false";
+      showBtn.textContent = i18n.t("wifi.show_password");
+    };
+
+    const revealExistingPassword = (psk) => {
+      passValue.textContent = psk;
+      passRow.dataset.visible = "true";
+      entryForm.dataset.visible = "false";
+      showBtn.textContent = i18n.t("wifi.hide_password");
+    };
+
+    const promptForPassword = () => {
+      passRow.dataset.visible = "false";
+      entryForm.dataset.visible = "true";
+      entryInput.value = "";
+      entryInput.focus();
+      showBtn.textContent = i18n.t("wifi.hide_password");
+    };
 
     showBtn.addEventListener("click", async () => {
-      const visible = passRow.dataset.visible === "true";
-      if (visible) {
-        passRow.dataset.visible = "false";
-        showBtn.textContent = i18n.t("wifi.show_password");
+      if (passRow.dataset.visible === "true" || entryForm.dataset.visible === "true") {
+        closePanels();
         return;
       }
       const secrets = await fetchWifiSecrets();
-      if (!secrets) return;
-      const entry = secrets[ssid];
-      const value = passRow.querySelector(".wifi-net-pass-value");
-      if (!entry || !entry.psk) {
-        value.textContent = i18n.t("wifi.no_password");
-      } else {
-        value.textContent = entry.psk;
-      }
-      passRow.dataset.visible = "true";
-      showBtn.textContent = i18n.t("wifi.hide_password");
+      const resolved = resolveWifiPassword(ssid, secrets);
+      if (resolved.psk) revealExistingPassword(resolved.psk);
+      else promptForPassword();
+    });
+
+    saveBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const value = (entryInput.value || "").trim();
+      if (!value) return;
+      setStoredPassword(ssid, value);
+      forgetBtn.style.display = "";
+      toast("success", i18n.t("wifi.saved"));
+      revealExistingPassword(value);
+    });
+
+    entryForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveBtn.click();
+    });
+
+    forgetBtn.addEventListener("click", () => {
+      clearStoredPassword(ssid);
+      forgetBtn.style.display = "none";
+      toast("success", i18n.t("wifi.forgotten"));
+      closePanels();
     });
 
     qrBtn.addEventListener("click", async () => {
       const secrets = await fetchWifiSecrets();
-      if (!secrets || !secrets[ssid]) {
-        toast("error", i18n.t("wifi.qr_failed"), i18n.t("wifi.no_password"));
+      const resolved = resolveWifiPassword(ssid, secrets);
+      if (!resolved.psk) {
+        toast("error", i18n.t("wifi.qr_failed"), i18n.t("wifi.need_password"));
+        promptForPassword();
         return;
       }
-      openWifiQr(ssid);
+      const entry = secrets && secrets[ssid];
+      openWifiQr(ssid, resolved.psk, entry && entry.auth);
     });
 
-    passRow.querySelector(".wifi-net-pass-copy").addEventListener("click", async (e) => {
+    copyBtn.addEventListener("click", async (e) => {
       e.preventDefault();
-      const value = passRow.querySelector(".wifi-net-pass-value").textContent || "";
+      const value = passValue.textContent || "";
+      if (!value) return;
       try {
         await navigator.clipboard.writeText(value);
         toast("success", i18n.t("wifi.copied"));
       } catch {}
     });
 
-    const actions = el("div", { class: "wifi-net-actions" }, [showBtn, qrBtn]);
+    const actions = el("div", { class: "wifi-net-actions" }, [showBtn, qrBtn, forgetBtn]);
     card.appendChild(actions);
     card.appendChild(passRow);
+    card.appendChild(entryForm);
   };
 
   const renderRouterConfig = (data) => {
