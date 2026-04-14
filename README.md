@@ -1,5 +1,7 @@
 # Starlink Mini · Dashboard
 
+# THIS REPOSITORY IS INACTIVE, IT HAS BEEN MOVED TO: https://gitlab.com/Freberg.guru/starlink-mini-dashboard
+
 A browser dashboard for Starlink Mini dishes. Connects to the dish and
 Starlink router over the local gRPC API and serves a live dashboard
 at `http://127.0.0.1:8800`.
