@@ -835,9 +835,9 @@
 
   const fmtTime = (date) => {
     try {
-      return date.toLocaleTimeString(LOCALES[lang] || "en-US");
+      return date.toLocaleTimeString(LOCALES[lang] || "en-US", { hour12: false });
     } catch {
-      return date.toLocaleTimeString();
+      return date.toLocaleTimeString("en-US", { hour12: false });
     }
   };
 

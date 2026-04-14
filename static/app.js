@@ -4,9 +4,9 @@
 (() => {
   "use strict";
 
-  const REFRESH_MS = 1000;
+  const REFRESH_MS = 500;
   const SLOW_REFRESH_TICKS = 5;
-  const HISTORY_REFRESH_TICKS = 10;
+  const HISTORY_REFRESH_TICKS = 20;
   const THROUGHPUT_MAX_BPS = 300_000_000;
 
   let utcOffsetS = 0;
@@ -2174,6 +2174,13 @@
     return i18n.fmtDate(d);
   };
 
+  const fmtOutageDateTime = (ns) => {
+    const secs = Number(ns) / 1e9;
+    if (!isFinite(secs)) return "";
+    const d = new Date(secs * 1000);
+    return `${i18n.fmtDate(d)} ${i18n.fmtTime(d)}`;
+  };
+
   const prettify = (s, prefix) => {
     if (!s) return "";
     let t = String(s);
@@ -2206,12 +2213,16 @@
     );
     for (const o of sorted) {
       const cause = o.cause || "UNKNOWN";
+      const didSwitch = pick(o, "did_switch", "didSwitch");
+      const switchTag = didSwitch ? i18n.t("outages.sat_switch") : i18n.t("outages.no_switch");
+      const duration = pick(o, "duration_ns", "durationNs");
+      const timestamp = pick(o, "start_timestamp_ns", "startTimestampNs");
       const row = el("div", { class: "event-row event-outage" }, [
         el("div", { class: "event-sev-label", text: cause.replace(/_/g, " ") }),
         el("div", { class: "event-reason", text: prettify(cause) }),
         el("div", { class: "event-meta" }, [
-          el("span", { class: "event-duration", text: fmtDurationNs(o.duration_ns) }),
-          el("span", { text: o.did_switch ? i18n.t("outages.sat_switch") : i18n.t("outages.no_switch") }),
+          el("span", { class: "event-duration", text: `${fmtDurationNs(duration)} ${switchTag}` }),
+          el("span", { text: fmtOutageDateTime(timestamp) }),
         ]),
       ]);
       list.appendChild(row);
@@ -2233,12 +2244,14 @@
     );
     for (const e of sorted) {
       const sev = severityClass(e.severity);
+      const duration = pick(e, "duration_ns", "durationNs");
+      const timestamp = pick(e, "start_timestamp_ns", "startTimestampNs");
       const row = el("div", { class: `event-row event-${sev}` }, [
         el("div", { class: "event-sev-label", text: (e.severity || "").replace(/^EVENT_SEVERITY_/, "") }),
         el("div", { class: "event-reason", text: prettify(e.reason, "EVENT_REASON_") }),
         el("div", { class: "event-meta" }, [
-          el("span", { class: "event-duration", text: fmtDurationNs(e.duration_ns) }),
-          el("span", { text: fmtEventTime(e.start_timestamp_ns) }),
+          el("span", { class: "event-duration", text: fmtDurationNs(duration) }),
+          el("span", { text: fmtOutageDateTime(timestamp) }),
         ]),
       ]);
       list.appendChild(row);

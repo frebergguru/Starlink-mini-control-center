@@ -625,6 +625,15 @@ def _time_ago_ns(ns):
     return f"{int(diff/86400)}d ago"
 
 
+def _fmt_datetime_ns(ns):
+    try: secs=float(ns)/1e9
+    except (TypeError, ValueError): return ""
+    try:
+        dt=datetime.fromtimestamp(secs)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except (ValueError, OSError): return ""
+
+
 def _fmt_duration_ns(ns):
     try: s=float(ns)/1e9
     except (TypeError, ValueError): return "N/A"
@@ -676,7 +685,8 @@ def display_history(data):
             dur=_fmt_duration_ns(sg(o,"duration_ns") or sg(o,"durationNs"))
             switch=sg(o,"did_switch") or sg(o,"didSwitch")
             tag="satellite switch" if switch else "no switch"
-            print(f"  {C.BCYN}│{C.RST}    {C.BYEL}{cause:<24}{C.RST} {C.CYN}{dur:>10}{C.RST}  {C.DIM}{tag}{C.RST}")
+            dt=_fmt_datetime_ns(sg(o,"start_timestamp_ns") or sg(o,"startTimestampNs"))
+            print(f"  {C.BCYN}│{C.RST}    {C.BYEL}{cause:<24}{C.RST} {C.CYN}{dur:>10}{C.RST}  {C.DIM}{tag:<17}{dt}{C.RST}")
     else:
         print(f"  {C.BCYN}│{C.RST}  {C.DIM}No outages recorded.{C.RST}")
     sec_end()
@@ -691,8 +701,8 @@ def display_history(data):
             sev=(sg(e,"severity") or "").replace("EVENT_SEVERITY_","") or "?"
             reason=(sg(e,"reason") or "").replace("EVENT_REASON_","").replace("_"," ").title()
             dur=_fmt_duration_ns(sg(e,"duration_ns") or sg(e,"durationNs"))
-            ago=_time_ago_ns(sg(e,"start_timestamp_ns") or sg(e,"startTimestampNs"))
-            print(f"  {C.BCYN}│{C.RST}    {C.BYEL}{sev:<10}{C.RST} {C.BWHT}{reason:<30}{C.RST} {C.CYN}{dur:>10}{C.RST}  {C.DIM}{ago}{C.RST}")
+            dt=_fmt_datetime_ns(sg(e,"start_timestamp_ns") or sg(e,"startTimestampNs"))
+            print(f"  {C.BCYN}│{C.RST}    {C.BYEL}{sev:<10}{C.RST} {C.BWHT}{reason:<30}{C.RST} {C.CYN}{dur:>10}{C.RST}  {C.DIM}{dt}{C.RST}")
     else:
         print(f"  {C.BCYN}│{C.RST}  {C.DIM}No events recorded.{C.RST}")
     sec_end()
